@@ -77,6 +77,37 @@ class BlenderCloudPreferences(AddonPreferences):
         sub.label(text=blender_id_text, icon=blender_id_icon)
         sub.label(text="* " + blender_id_help)
 
+        # options for Pillar
+        sub = layout.column()
+        sub.enabled = blender_id_icon != 'ERROR'
+        sub.prop(self, "pillar_server")
+        sub.operator("pillar.credentials_update")
+
+
+class PillarCredentialsUpdate(Operator):
+    """Updates the Pillar URL and tests the new URL."""
+    bl_idname = "pillar.credentials_update"
+    bl_label = "Update credentials"
+
+    def execute(self, context):
+        active_user_id = getattr(bpy.context.window_manager, 'blender_id_active_profile', None)
+        if not active_user_id:
+            self.report({'ERROR'}, "No profile active found")
+            return {'CANCELLED'}
+
+        # Test the new URL
+        endpoint = bpy.context.user_preferences.addons[__name__].preferences.pillar_server
+        pillar._pillar_api = None
+        try:
+            pillar.get_project_uuid('textures')  # Just any query will do.
+        except Exception as e:
+            print(e)
+            self.report({'ERROR'}, 'Failed connection to %s' % endpoint)
+            return {'FINISHED'}
+
+        self.report({'INFO'}, 'Updated cloud server address to %s' % endpoint)
+        return {'FINISHED'}
+
 
 def register():
     bpy.utils.register_module(__name__)
