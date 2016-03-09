@@ -71,7 +71,8 @@ class BlenderCloudPreferences(AddonPreferences):
         else:
             blender_id_icon = 'WORLD_DATA'
             blender_id_text = "You are logged in as %s." % blender_id_profile['username']
-            blender_id_help = "To logout or change profile, go to the Blender ID add-on preferences."
+            blender_id_help = "To logout or change profile, " \
+                              "go to the Blender ID add-on preferences."
 
         sub = layout.column()
         sub.label(text=blender_id_text, icon=blender_id_icon)
@@ -89,10 +90,20 @@ class PillarCredentialsUpdate(Operator):
     bl_idname = "pillar.credentials_update"
     bl_label = "Update credentials"
 
+    @classmethod
+    def poll(cls, context):
+        # Only allow activation when the user is actually logged in.
+        return cls.is_logged_in(context)
+
+    @classmethod
+    def is_logged_in(cls, context):
+        active_user_id = getattr(context.window_manager, 'blender_id_active_profile', None)
+        return bool(active_user_id)
+
     def execute(self, context):
-        active_user_id = getattr(bpy.context.window_manager, 'blender_id_active_profile', None)
-        if not active_user_id:
-            self.report({'ERROR'}, "No profile active found")
+        # Only allow activation when the user is actually logged in.
+        if not self.is_logged_in(context):
+            self.report({'ERROR'}, "No active profile found")
             return {'CANCELLED'}
 
         # Test the new URL

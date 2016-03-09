@@ -1,5 +1,6 @@
 import sys
 import os
+import concurrent.futures
 
 # Add our shipped Pillar SDK wheel to the Python path
 if not any('pillar_sdk' in path for path in sys.path):
@@ -12,7 +13,6 @@ if not any('pillar_sdk' in path for path in sys.path):
 
 import pillarsdk
 import pillarsdk.exceptions
-import bpy
 
 _pillar_api = None  # will become a pillarsdk.Api object.
 
@@ -26,6 +26,8 @@ class UserNotLoggedInError(RuntimeError):
 
 def blender_id_profile() -> dict:
     """Returns the Blender ID profile of the currently logged in user."""
+
+    import bpy
 
     active_user_id = getattr(bpy.context.window_manager, 'blender_id_active_profile', None)
     if not active_user_id:
@@ -42,6 +44,7 @@ def pillar_api() -> pillarsdk.Api:
     """
 
     global _pillar_api
+    import bpy
 
     # Only return the Pillar API object if the user is still logged in.
     profile = blender_id_profile()
@@ -74,22 +77,72 @@ def get_project_uuid(project_url: str) -> str:
     return project['_id']
 
 
-def get_nodes(project_uuid: str, parent_node_uuid: str = '') -> list:
-    if not parent_node_uuid:
-        parent_spec = {'$exists': False}
-    else:
-        parent_spec = parent_node_uuid
+def get_nodes(project_uuid: str = None, parent_node_uuid: str = None) -> list:
+    """Gets nodes for either a project or given a parent node.
+
+    @param project_uuid: the UUID of the project, or None if only querying by parent_node_uuid.
+    @param parent_node_uuid: the UUID of the parent node. Can be the empty string if the
+        node should be a top-level node in the project. Can also be None to query all nodes in a
+        project. In both these cases the project UUID should be given.
+    """
+
+    if not project_uuid and not parent_node_uuid:
+        raise ValueError('get_nodes(): either project_uuid or parent_node_uuid must be given.')
+
+    where = {'properties.status': 'published'}
+
+    # Build the parent node where-clause
+    if parent_node_uuid == '':
+        where['parent'] = {'$exists': False}
+    elif parent_node_uuid is not None:
+        where['parent'] = parent_node_uuid
+
+    # Build the project where-clause
+    if project_uuid:
+        where['project'] = project_uuid
 
     children = pillarsdk.Node.all({
         'projection': {'name': 1, 'parent': 1, 'node_type': 1,
                        'properties.order': 1, 'properties.status': 1,
-                       'properties.content_type': 1,
+                       'properties.content_type': 1, 'picture': 1,
                        'permissions': 1, 'project': 1,  # for permission checking
                        },
-        'where': {'project': project_uuid,
-                  'parent': parent_spec,
-                  'properties.status': 'published'},
+        'where': where,
         'sort': 'properties.order'},
         api=pillar_api())
 
     return children['_items']
+
+
+def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str):
+    """Fetches all texture thumbnails in a certain parent node.
+
+    @param parent_node_uuid: the UUID of the parent node. All sub-nodes will be downloaded.
+    @param desired_size: size indicator, from 'sbtmlh'.
+    """
+
+    def fetch_thumbnail_from_node(texture_node: pillarsdk.Node, api: pillarsdk.Api):
+        # Fetch the File description JSON
+        pic_uuid = texture_node['picture']
+        file_desc = pillarsdk.File.find(pic_uuid, {
+            'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
+        }, api=api)
+
+        # Save the thumbnail
+        thumb_path = file_desc.stream_thumb_to_file('/tmp', desired_size, api=api)
+
+        return texture_node['name'], thumb_path
+
+    api = pillar_api()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        # Queue up fetching of thumbnails
+        futures = [executor.submit(fetch_thumbnail_from_node, node, api)
+                   for node in get_nodes(parent_node_uuid=parent_node_uuid)
+                   if node['node_type'] == 'texture']
+
+        for future in futures:
+            node, file = future.result()
+            print('Node {} has picture {}'.format(node, file))
+
+    print('Done downloading texture thumbnails')
