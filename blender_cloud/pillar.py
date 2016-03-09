@@ -1,6 +1,7 @@
 import sys
 import os
 import concurrent.futures
+import functools
 
 # Add our shipped Pillar SDK wheel to the Python path
 if not any('pillar_sdk' in path for path in sys.path):
@@ -114,35 +115,65 @@ def get_nodes(project_uuid: str = None, parent_node_uuid: str = None) -> list:
     return children['_items']
 
 
-def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str):
-    """Fetches all texture thumbnails in a certain parent node.
+def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str, thumbnail_directory: str):
+    """Generator, fetches all texture thumbnails in a certain parent node.
 
     @param parent_node_uuid: the UUID of the parent node. All sub-nodes will be downloaded.
     @param desired_size: size indicator, from 'sbtmlh'.
+    @param thumbnail_directory: directory in which to store the downloaded thumbnails.
+    @returns: generator that yields (pillarsdk.File object, thumbnail path) tuples
     """
 
-    def fetch_thumbnail_from_node(texture_node: pillarsdk.Node, api: pillarsdk.Api):
+    api = pillar_api()
+
+    def fetch_thumbnail_from_node(texture_node: pillarsdk.Node):
         # Fetch the File description JSON
         pic_uuid = texture_node['picture']
         file_desc = pillarsdk.File.find(pic_uuid, {
             'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
         }, api=api)
 
+        if file_desc is None:
+            print('Unable to find picture {}'.format(pic_uuid))
+            return None, None
+
         # Save the thumbnail
-        thumb_path = file_desc.stream_thumb_to_file('/tmp', desired_size, api=api)
+        thumb_path = file_desc.stream_thumb_to_file(thumbnail_directory, desired_size, api=api)
 
-        return texture_node['name'], thumb_path
+        return file_desc, thumb_path
 
-    api = pillar_api()
+    texture_nodes = (node for node in get_nodes(parent_node_uuid=parent_node_uuid)
+                     if node['node_type'] == 'texture')
 
+    # # Single-threaded, not maintained:
+    # for node in texture_nodes:
+    #     node, file = fetch_thumbnail_from_node(node)
+    #     print('Node {} has picture {}'.format(node, file))
+
+    # Multi-threaded:
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         # Queue up fetching of thumbnails
-        futures = [executor.submit(fetch_thumbnail_from_node, node, api)
-                   for node in get_nodes(parent_node_uuid=parent_node_uuid)
-                   if node['node_type'] == 'texture']
+        futures = [executor.submit(fetch_thumbnail_from_node, node)
+                   for node in texture_nodes]
 
         for future in futures:
-            node, file = future.result()
-            print('Node {} has picture {}'.format(node, file))
+            file_desc, thumb_path = future.result()
+            yield file_desc, thumb_path
 
     print('Done downloading texture thumbnails')
+
+
+@functools.lru_cache(128)
+def parent_node_uuid(node_uuid: str) -> str:
+    """Returns the UUID of the node's parent node, or an empty string if this is the top level."""
+
+    api = pillar_api()
+    node = pillarsdk.Node.find(node_uuid, {'projection': {'parent': 1}}, api=api)
+    if node is None:
+        return ''
+
+    print('Found node {}'.format(node))
+    try:
+        return node['parent']
+    except KeyError:
+        return ''

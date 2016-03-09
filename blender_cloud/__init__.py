@@ -32,17 +32,21 @@ bl_info = {
     "support": "TESTING"
 }
 
+import os.path
+import typing
+
 # Support reloading
 if 'pillar' in locals():
     import importlib
+
     pillar = importlib.reload(pillar)
 else:
     from . import pillar
 
-
 import bpy
-from bpy.types import AddonPreferences, Operator, PropertyGroup
-from bpy.props import PointerProperty, StringProperty
+import bpy.utils.previews
+from bpy.types import AddonPreferences, Operator, PropertyGroup, WindowManager
+from bpy.props import PointerProperty, StringProperty, EnumProperty
 
 
 class BlenderCloudPreferences(AddonPreferences):
@@ -126,12 +130,151 @@ class PillarCredentialsUpdate(Operator):
         return {'FINISHED'}
 
 
+# We can store multiple preview collections here,
+# however in this example we only store "main"
+preview_collections = {}
+
+
+def enum_previews_from_directory_items(self, context) -> typing.List[typing.AnyStr]:
+    """EnumProperty callback"""
+
+    if context is None:
+        return []
+
+    wm = context.window_manager
+    project_uuid = wm.blender_cloud_project
+    node_uuid = wm.blender_cloud_node
+
+    # Get the preview collection (defined in register func).
+    pcoll = preview_collections["blender_cloud"]
+    if pcoll.project_uuid == project_uuid and pcoll.node_uuid == node_uuid:
+        return pcoll.previews
+
+    print('Loading previews for project {!r} node {!r}'.format(project_uuid, node_uuid))
+    enum_items = []
+
+    # If we have a node UUID, we fetch the textures
+    # FIXME: support mixture of sub-nodes and textures under one node.
+    if node_uuid:
+        # Make sure we can go up again.
+        parent = pillar.parent_node_uuid(node_uuid)
+        enum_items.append(('node-{}'.format(parent), 'up', 'up',
+                           'FILE_FOLDER',
+                           len(enum_items)))
+
+        directory = os.path.join(wm.thumbnails_cache, project_uuid, node_uuid)
+        os.makedirs(directory, exist_ok=True)
+
+        for file_desc, thumb_path in pillar.fetch_texture_thumbs(node_uuid, 's', directory):
+            thumb = pcoll.get(thumb_path)
+            if thumb is None:
+                thumb = pcoll.load(thumb_path, thumb_path, 'IMAGE')
+            enum_items.append(('thumb-{}'.format(thumb_path), file_desc['filename'],
+                               thumb_path,
+                               # TODO: get something here that allows downloading the texture
+                               thumb.icon_id,
+                               len(enum_items)))
+    elif project_uuid:
+        children = pillar.get_nodes(project_uuid, '')
+
+        for child in children:
+            print('  - %(_id)s = %(name)s' % child)
+            enum_items.append(('node-{}'.format(child['_id']), child['name'],
+                               'description',
+                               'FILE_FOLDER',
+                               len(enum_items)))
+
+    pcoll.previews = enum_items
+    pcoll.project_uuid = project_uuid
+    pcoll.node_uuid = node_uuid
+    return pcoll.previews
+
+
+def enum_previews_from_directory_update(self, context):
+    print('Updating from {!r}'.format(self.blender_cloud_thumbnails))
+
+    sel_type, sel_id = self.blender_cloud_thumbnails.split('-', 1)
+
+    if sel_type == 'node':
+        # Go into this node
+        self.blender_cloud_node = sel_id
+    elif sel_type == 'thumb':
+        # Select this image
+        pass
+    else:
+        print("enum_previews_from_directory_update: Don't know what to do with {!r}"
+              .format(self.blender_cloud_thumbnails))
+
+
+class PreviewsExamplePanel(bpy.types.Panel):
+    """Creates a Panel in the Object properties window"""
+
+    bl_label = "Previews Example Panel"
+    bl_idname = "OBJECT_PT_previews"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+
+    def draw(self, context):
+        layout = self.layout
+        wm = context.window_manager
+
+        row = layout.column()
+        row.prop(wm, "thumbnails_cache")
+        row.prop(wm, "blender_cloud_project")
+        row.prop(wm, "blender_cloud_node")
+        row.template_icon_view(wm, "blender_cloud_thumbnails", show_labels=True)
+        row.prop(wm, "blender_cloud_thumbnails")
+
+
 def register():
     bpy.utils.register_module(__name__)
+
+    WindowManager.thumbnails_cache = StringProperty(
+        name="Thumbnails cache",
+        subtype='DIR_PATH',
+        default='/home/sybren/.cache/blender_cloud/thumbnails')
+
+    WindowManager.blender_cloud_project = StringProperty(
+        name="Blender Cloud project UUID",
+        default='5672beecc0261b2005ed1a33')  # TODO: don't hard-code this
+
+    WindowManager.blender_cloud_node = StringProperty(
+        name="Blender Cloud node UUID",
+        default='')  # empty == top-level of project
+
+    WindowManager.blender_cloud_thumbnails = EnumProperty(
+        items=enum_previews_from_directory_items,
+        update=enum_previews_from_directory_update,
+    )
+
+    # Note that preview collections returned by bpy.utils.previews
+    # are regular Python objects - you can use them to store custom data.
+    #
+    # This is especially useful here, since:
+    # - It avoids us regenerating the whole enum over and over.
+    # - It can store enum_items' strings
+    #   (remember you have to keep those strings somewhere in py,
+    #   else they get freed and Blender references invalid memory!).
+    pcoll = bpy.utils.previews.new()
+    pcoll.previews = ()
+    pcoll.project_uuid = ''
+    pcoll.node_uuid = ''
+
+    preview_collections["blender_cloud"] = pcoll
 
 
 def unregister():
     bpy.utils.unregister_module(__name__)
+
+    del WindowManager.thumbnails_cache
+    del WindowManager.blender_cloud_project
+    del WindowManager.blender_cloud_node
+    del WindowManager.blender_cloud_thumbnails
+
+    for pcoll in preview_collections.values():
+        bpy.utils.previews.remove(pcoll)
+    preview_collections.clear()
 
 
 if __name__ == "__main__":
