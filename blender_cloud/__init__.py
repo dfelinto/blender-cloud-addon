@@ -32,7 +32,13 @@ bl_info = {
     "support": "TESTING"
 }
 
-from . import pillar
+# Support reloading
+if 'pillar' in locals():
+    import importlib
+    pillar = importlib.reload(pillar)
+else:
+    from . import pillar
+
 
 import bpy
 from bpy.types import AddonPreferences, Operator, PropertyGroup
