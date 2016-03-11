@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import os
 import concurrent.futures
@@ -14,6 +15,7 @@ if not any('pillar_sdk' in path for path in sys.path):
 
 import pillarsdk
 import pillarsdk.exceptions
+import pillarsdk.utils
 
 _pillar_api = None  # will become a pillarsdk.Api object.
 
@@ -62,14 +64,17 @@ def pillar_api() -> pillarsdk.Api:
     return _pillar_api
 
 
-def get_project_uuid(project_url: str) -> str:
+async def get_project_uuid(project_url: str) -> str:
     """Returns the UUID for the project, given its '/p/<project_url>' string."""
 
+    find_one = functools.partial(pillarsdk.Project.find_one, {
+        'where': {'url': project_url},
+        'projection': {'permissions': 1},
+    }, api=pillar_api())
+
+    loop = asyncio.get_event_loop()
     try:
-        project = pillarsdk.Project.find_one({
-            'where': {'url': project_url},
-            'projection': {'permissions': 1},
-        }, api=pillar_api())
+        project = await loop.run_in_executor(None, find_one)
     except pillarsdk.exceptions.ResourceNotFound:
         print('Project with URL %r does not exist' % project_url)
         return None
@@ -78,7 +83,7 @@ def get_project_uuid(project_url: str) -> str:
     return project['_id']
 
 
-def get_nodes(project_uuid: str = None, parent_node_uuid: str = None) -> list:
+async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None) -> list:
     """Gets nodes for either a project or given a parent node.
 
     @param project_uuid: the UUID of the project, or None if only querying by parent_node_uuid.
@@ -102,73 +107,112 @@ def get_nodes(project_uuid: str = None, parent_node_uuid: str = None) -> list:
     if project_uuid:
         where['project'] = project_uuid
 
-    children = pillarsdk.Node.all({
+    node_all = functools.partial(pillarsdk.Node.all, {
         'projection': {'name': 1, 'parent': 1, 'node_type': 1,
                        'properties.order': 1, 'properties.status': 1,
-                       'properties.content_type': 1, 'picture': 1,
-                       'permissions': 1, 'project': 1,  # for permission checking
-                       },
+                       'properties.content_type': 1, 'picture': 1},
         'where': where,
-        'sort': 'properties.order'},
-        api=pillar_api())
+        'sort': 'properties.order'}, api=pillar_api())
+
+    loop = asyncio.get_event_loop()
+    children = await loop.run_in_executor(None, node_all)
 
     return children['_items']
 
 
-def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str, thumbnail_directory: str):
+async def download_to_file(url, filename, chunk_size=10 * 1024):
+    """Downloads a file via HTTP(S) directly to the filesystem."""
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, pillarsdk.utils.download_to_file, url, filename, chunk_size)
+
+
+async def stream_thumb_to_file(file: pillarsdk.File, directory: str, desired_size: str):
+    """Streams a thumbnail to a file.
+
+    @param file: the pillar File object that represents the image whose thumbnail to download.
+    @param directory: the directory to save the file to.
+    @param desired_size: thumbnail size
+    @return: the absolute path of the downloaded file.
+    """
+
+    api = pillar_api()
+
+    loop = asyncio.get_event_loop()
+    thumb_link = await loop.run_in_executor(None, functools.partial(
+        file.thumbnail_file, desired_size, api=api))
+
+    if thumb_link is None:
+        raise ValueError("File {} has no thumbnail of size {}"
+                         .format(file['_id'], desired_size))
+
+    root, ext = os.path.splitext(file['file_path'])
+    thumb_fname = "{0}-{1}.jpg".format(root, desired_size)
+    thumb_path = os.path.abspath(os.path.join(directory, thumb_fname))
+
+    await download_to_file(thumb_link, thumb_path)
+
+    return thumb_path
+
+
+async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
+                               thumbnail_directory: str,
+                               *,
+                               thumbnail_loading: callable,
+                               thumbnail_loaded: callable):
     """Generator, fetches all texture thumbnails in a certain parent node.
 
     @param parent_node_uuid: the UUID of the parent node. All sub-nodes will be downloaded.
     @param desired_size: size indicator, from 'sbtmlh'.
     @param thumbnail_directory: directory in which to store the downloaded thumbnails.
-    @returns: generator that yields (pillarsdk.File object, thumbnail path) tuples
+    @param thumbnail_loading: callback function that takes (pillarsdk.File object)
+        parameter, which is called before a thumbnail will be downloaded. This allows you to
+        show a "downloading" indicator.
+    @param thumbnail_loaded: callback function that takes (pillarsdk.File object, thumbnail path)
+        parameters, which is called for every thumbnail after it's been downloaded.
     """
 
     api = pillar_api()
+    loop = asyncio.get_event_loop()
 
-    def fetch_thumbnail_from_node(texture_node: pillarsdk.Node):
-        # Fetch the File description JSON
+    file_find = functools.partial(pillarsdk.File.find, params={
+        'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
+    }, api=api)
+
+    # TODO: Still single-threaded, could branch out to a few threads here to download in parallel.
+    texture_nodes = await get_nodes(parent_node_uuid=parent_node_uuid)
+    for texture_node in texture_nodes:
+        # Skip non-texture nodes, as we can't thumbnail them anyway.
+        if texture_node['node_type'] != 'texture':
+            continue
+
+        # Find the File that belongs to this texture node
         pic_uuid = texture_node['picture']
-        file_desc = pillarsdk.File.find(pic_uuid, {
-            'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
-        }, api=api)
+        file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
+        loop.call_soon_threadsafe(functools.partial(thumbnail_loading, file_desc))
 
         if file_desc is None:
-            print('Unable to find picture {}'.format(pic_uuid))
-            return None, None
+            print('Unable to find file for texture node {}'.format(pic_uuid))
+            thumb_path = None
+        else:
+            # Save the thumbnail
+            thumb_path = await stream_thumb_to_file(file_desc, thumbnail_directory, desired_size)
+            # print('Texture node {} has file {}'.format(texture_node['_id'], thumb_path))
 
-        # Save the thumbnail
-        thumb_path = file_desc.stream_thumb_to_file(thumbnail_directory, desired_size, api=api)
-
-        return file_desc, thumb_path
-
-    texture_nodes = (node for node in get_nodes(parent_node_uuid=parent_node_uuid)
-                     if node['node_type'] == 'texture')
-
-    # # Single-threaded, not maintained:
-    # for node in texture_nodes:
-    #     node, file = fetch_thumbnail_from_node(node)
-    #     print('Node {} has picture {}'.format(node, file))
-
-    # Multi-threaded:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        # Queue up fetching of thumbnails
-        futures = [executor.submit(fetch_thumbnail_from_node, node)
-                   for node in texture_nodes]
-
-        for future in futures:
-            file_desc, thumb_path = future.result()
-            yield file_desc, thumb_path
+        loop.call_soon_threadsafe(functools.partial(thumbnail_loaded, file_desc, thumb_path))
 
     print('Done downloading texture thumbnails')
 
 
-@functools.lru_cache(128)
-def parent_node_uuid(node_uuid: str) -> str:
+async def parent_node_uuid(node_uuid: str) -> str:
     """Returns the UUID of the node's parent node, or an empty string if this is the top level."""
 
     api = pillar_api()
-    node = pillarsdk.Node.find(node_uuid, {'projection': {'parent': 1}}, api=api)
+    loop = asyncio.get_event_loop()
+
+    find_node = functools.partial(pillarsdk.Node.find, node_uuid,
+                                  {'projection': {'parent': 1}}, api=api)
+    node = await loop.run_in_executor(None, find_node)
     if node is None:
         return ''
 

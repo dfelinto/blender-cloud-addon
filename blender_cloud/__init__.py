@@ -34,14 +34,16 @@ bl_info = {
 
 import os.path
 import typing
+import asyncio
 
 # Support reloading
 if 'pillar' in locals():
     import importlib
 
     pillar = importlib.reload(pillar)
+    async_loop = importlib.reload(async_loop)
 else:
-    from . import pillar
+    from . import pillar, async_loop
 
 import bpy
 import bpy.utils.previews
@@ -151,31 +153,73 @@ def enum_previews_from_directory_items(self, context) -> typing.List[typing.AnyS
         return pcoll.previews
 
     print('Loading previews for project {!r} node {!r}'.format(project_uuid, node_uuid))
-    enum_items = []
 
+    if pcoll.async_task is not None and not pcoll.async_task.done():
+        # We're still asynchronously downloading, but the UUIDs changed.
+        print('Cancelling running async download task {}'.format(pcoll.async_task))
+        pcoll.async_task.cancel()
+
+    # Download the previews asynchronously.
+    pcoll.previews = []
+    pcoll.project_uuid = project_uuid
+    pcoll.node_uuid = node_uuid
+    pcoll.context = context
+    pcoll.async_task = asyncio.ensure_future(async_download_previews(wm.thumbnails_cache, pcoll))
+
+    # Start the async manager so everything happens.
+    async_loop.ensure_async_loop()
+
+    return pcoll.previews
+
+
+async def async_download_previews(thumbnails_directory, pcoll):
     # If we have a node UUID, we fetch the textures
     # FIXME: support mixture of sub-nodes and textures under one node.
+    enum_items = pcoll.previews
+
+    node_uuid = pcoll.node_uuid
+    project_uuid = pcoll.project_uuid
+
+    def thumbnail_loading(file_desc):
+        # TODO: trigger re-draw
+        pass
+
+    try:
+        region = pcoll.context.window.screen.regions[0]
+        print('We have a region: {}'.format(region))
+    except IndexError:
+        region = None
+
+    def thumbnail_loaded(file_desc, thumb_path):
+        thumb = pcoll.get(thumb_path)
+        if thumb is None:
+            thumb = pcoll.load(thumb_path, thumb_path, 'IMAGE')
+        enum_items.append(('thumb-{}'.format(thumb_path), file_desc['filename'],
+                           thumb_path,
+                           thumb.icon_id,
+                           len(enum_items)))
+        # TODO: trigger re-draw
+        if region is not None:
+            try:
+                region.tag_redraw()
+            except Exception as e:
+                print('WE DIE! ', e)
+
     if node_uuid:
         # Make sure we can go up again.
-        parent = pillar.parent_node_uuid(node_uuid)
+        parent = await pillar.parent_node_uuid(node_uuid)
         enum_items.append(('node-{}'.format(parent), 'up', 'up',
                            'FILE_FOLDER',
                            len(enum_items)))
 
-        directory = os.path.join(wm.thumbnails_cache, project_uuid, node_uuid)
+        directory = os.path.join(thumbnails_directory, project_uuid, node_uuid)
         os.makedirs(directory, exist_ok=True)
 
-        for file_desc, thumb_path in pillar.fetch_texture_thumbs(node_uuid, 's', directory):
-            thumb = pcoll.get(thumb_path)
-            if thumb is None:
-                thumb = pcoll.load(thumb_path, thumb_path, 'IMAGE')
-            enum_items.append(('thumb-{}'.format(thumb_path), file_desc['filename'],
-                               thumb_path,
-                               # TODO: get something here that allows downloading the texture
-                               thumb.icon_id,
-                               len(enum_items)))
+        await pillar.fetch_texture_thumbs(node_uuid, 's', directory,
+                                          thumbnail_loading=thumbnail_loading,
+                                          thumbnail_loaded=thumbnail_loaded)
     elif project_uuid:
-        children = pillar.get_nodes(project_uuid, '')
+        children = await pillar.get_nodes(project_uuid, '')
 
         for child in children:
             print('  - %(_id)s = %(name)s' % child)
@@ -183,11 +227,15 @@ def enum_previews_from_directory_items(self, context) -> typing.List[typing.AnyS
                                'description',
                                'FILE_FOLDER',
                                len(enum_items)))
-
-    pcoll.previews = enum_items
-    pcoll.project_uuid = project_uuid
-    pcoll.node_uuid = node_uuid
-    return pcoll.previews
+            # TODO: trigger re-draw
+            if region is not None:
+                try:
+                    region.tag_redraw()
+                except Exception as e:
+                    print('WE DIE! ', e)
+    else:
+        # TODO: add "nothing here" icon and trigger re-draw
+        pass
 
 
 def enum_previews_from_directory_update(self, context):
@@ -224,7 +272,38 @@ class PreviewsExamplePanel(bpy.types.Panel):
         row.prop(wm, "blender_cloud_project")
         row.prop(wm, "blender_cloud_node")
         row.template_icon_view(wm, "blender_cloud_thumbnails", show_labels=True)
-        row.prop(wm, "blender_cloud_thumbnails")
+        # row.prop(wm, "blender_cloud_thumbnails")
+
+
+class AsyncOperator(Operator):
+    bl_idname = 'async.action'
+    bl_label = 'Asynchronous action'
+    bl_description = ''
+
+    def execute(self, context):
+        print('{}: executing'.format(self))
+
+        asyncio.ensure_future(do_async_stuff(context))
+        async_loop.ensure_async_loop()
+        print('{}: done'.format(self))
+
+        return {'FINISHED'}
+
+
+async def do_async_stuff(context):
+    print('do_async_stuff(): starting')
+
+    wm = context.window_manager
+    project_uuid = wm.blender_cloud_project
+    print('Loading nodes for project {!r}'.format(project_uuid))
+
+    children = await pillar.get_nodes(project_uuid, '')
+
+    for child in children:
+        print('  - %(_id)s = %(name)s' % child)
+        await asyncio.sleep(0.5)
+
+    print('do_async_stuff(): done')
 
 
 def register():
@@ -260,6 +339,8 @@ def register():
     pcoll.previews = ()
     pcoll.project_uuid = ''
     pcoll.node_uuid = ''
+    pcoll.async_task = None
+    pcoll.context = None
 
     preview_collections["blender_cloud"] = pcoll
 
