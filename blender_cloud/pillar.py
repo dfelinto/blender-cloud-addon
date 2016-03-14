@@ -1,7 +1,6 @@
 import asyncio
 import sys
 import os
-import concurrent.futures
 import functools
 
 # Add our shipped Pillar SDK wheel to the Python path
@@ -186,10 +185,10 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
 
         # Find the File that belongs to this texture node
         pic_uuid = texture_node['picture']
-        file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
         loop.call_soon_threadsafe(functools.partial(thumbnail_loading,
                                                     texture_node['_id'],
-                                                    file_desc))
+                                                    texture_node))
+        file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
 
         if file_desc is None:
             print('Unable to find file for texture node {}'.format(pic_uuid))

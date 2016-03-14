@@ -54,22 +54,40 @@ class MenuItem:
 
     DEFAULT_ICONS = {
         'FOLDER': os.path.join(library_icons_path, 'folder.png'),
+        'SPINNER': os.path.join(library_icons_path, 'spinner.png'),
     }
 
     def __init__(self, node_uuid: str, file_desc, thumb_path: str, label_text):
-        self.node_uuid = node_uuid  # pillarsdk.Node UUID
+        self.node_uuid = node_uuid  # pillarsdk.Node UUID of a texture node
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
         self.label_text = label_text
+        self._thumb_path = ''
+        self.icon = None
 
-        thumb_path = self.DEFAULT_ICONS.get(thumb_path, thumb_path)
         self.thumb_path = thumb_path
-        self.icon = bpy.data.images.load(filepath=thumb_path)
 
         # Updated when drawing the image
         self.x = 0
         self.y = 0
         self.width = 0
         self.height = 0
+
+    @property
+    def thumb_path(self) -> str:
+        return self._thumb_path
+
+    @thumb_path.setter
+    def thumb_path(self, new_thumb_path: str):
+        self._thumb_path = self.DEFAULT_ICONS.get(new_thumb_path, new_thumb_path)
+        if self._thumb_path:
+            self.icon = bpy.data.images.load(filepath=self._thumb_path)
+        else:
+            self.icon = None
+
+    def update(self, file_desc, thumb_path: str, label_text):
+        self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
+        self.thumb_path = thumb_path
+        self.label_text = label_text
 
     @property
     def is_folder(self) -> bool:
@@ -143,6 +161,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
     async_task = None  # asyncio task for fetching thumbnails
     timer = None
 
+    _menu_item_lock = threading.Lock()
     current_path = ''
     current_display_content = []
     loaded_images = set()
@@ -240,15 +259,26 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.loaded_images.clear()
         self.current_display_content.clear()
 
-    def add_menu_item(self, *args, menu_item_lock=threading.Lock()) -> MenuItem:
+    def add_menu_item(self, *args) -> MenuItem:
         menu_item = MenuItem(*args)
 
         # Just make this thread-safe to be on the safe side.
-        with menu_item_lock:
+        with self._menu_item_lock:
             self.current_display_content.append(menu_item)
             self.loaded_images.add(menu_item.icon.filepath_raw)
 
         return menu_item
+
+    def update_menu_item(self, node_uuid, *args) -> MenuItem:
+        # Just make this thread-safe to be on the safe side.
+        with self._menu_item_lock:
+            for menu_item in self.current_display_content:
+                if menu_item.node_uuid == node_uuid:
+                    menu_item.update(*args)
+                    self.loaded_images.add(menu_item.icon.filepath_raw)
+                    break
+            else:
+                raise ValueError('Unable to find MenuItem(node_uuid=%r)' % node_uuid)
 
     async def async_download_previews(self, context, thumbnails_directory):
         # If we have a node UUID, we fetch the textures
@@ -264,13 +294,13 @@ class BlenderCloudBrowser(bpy.types.Operator):
             # region.tag_redraw()
             pass
 
-        def thumbnail_loading(node_uuid, file_desc):
-            # TODO: add MenuItem
+        def thumbnail_loading(node_uuid, texture_node):
+            self.add_menu_item(node_uuid, None, 'SPINNER', texture_node['name'])
             redraw()
 
         def thumbnail_loaded(node_uuid, file_desc, thumb_path):
-            # Add MenuItem; TODO: update MenuItem added above
-            self.add_menu_item(node_uuid, file_desc, thumb_path, file_desc['filename'])
+            # update MenuItem added above
+            self.update_menu_item(node_uuid, file_desc, thumb_path, file_desc['filename'])
             redraw()
 
         if self.node_uuid:
