@@ -258,37 +258,6 @@ class PreviewsExamplePanel(bpy.types.Panel):
         # row.prop(wm, "blender_cloud_thumbnails")
 
 
-class AsyncOperator(Operator):
-    bl_idname = 'async.action'
-    bl_label = 'Asynchronous action'
-    bl_description = ''
-
-    def execute(self, context):
-        print('{}: executing'.format(self))
-
-        asyncio.ensure_future(do_async_stuff(context))
-        async_loop.ensure_async_loop()
-        print('{}: done'.format(self))
-
-        return {'FINISHED'}
-
-
-async def do_async_stuff(context):
-    print('do_async_stuff(): starting')
-
-    wm = context.window_manager
-    project_uuid = wm.blender_cloud_project
-    print('Loading nodes for project {!r}'.format(project_uuid))
-
-    children = await pillar.get_nodes(project_uuid, '')
-
-    for child in children:
-        print('  - %(_id)s = %(name)s' % child)
-        await asyncio.sleep(0.5)
-
-    print('do_async_stuff(): done')
-
-
 def register():
     bpy.utils.register_module(__name__)
 
