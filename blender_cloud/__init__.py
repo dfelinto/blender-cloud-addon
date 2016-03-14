@@ -163,7 +163,6 @@ def enum_previews_from_directory_items(self, context) -> typing.List[typing.AnyS
     pcoll.previews = []
     pcoll.project_uuid = project_uuid
     pcoll.node_uuid = node_uuid
-    pcoll.context = context
     pcoll.async_task = asyncio.ensure_future(async_download_previews(wm.thumbnails_cache, pcoll))
 
     # Start the async manager so everything happens.
@@ -184,12 +183,6 @@ async def async_download_previews(thumbnails_directory, pcoll):
         # TODO: trigger re-draw
         pass
 
-    try:
-        region = pcoll.context.window.screen.regions[0]
-        print('We have a region: {}'.format(region))
-    except IndexError:
-        region = None
-
     def thumbnail_loaded(file_desc, thumb_path):
         thumb = pcoll.get(thumb_path)
         if thumb is None:
@@ -199,11 +192,6 @@ async def async_download_previews(thumbnails_directory, pcoll):
                            thumb.icon_id,
                            len(enum_items)))
         # TODO: trigger re-draw
-        if region is not None:
-            try:
-                region.tag_redraw()
-            except Exception as e:
-                print('WE DIE! ', e)
 
     if node_uuid:
         # Make sure we can go up again.
@@ -228,11 +216,6 @@ async def async_download_previews(thumbnails_directory, pcoll):
                                'FILE_FOLDER',
                                len(enum_items)))
             # TODO: trigger re-draw
-            if region is not None:
-                try:
-                    region.tag_redraw()
-                except Exception as e:
-                    print('WE DIE! ', e)
     else:
         # TODO: add "nothing here" icon and trigger re-draw
         pass
@@ -340,7 +323,6 @@ def register():
     pcoll.project_uuid = ''
     pcoll.node_uuid = ''
     pcoll.async_task = None
-    pcoll.context = None
 
     preview_collections["blender_cloud"] = pcoll
 
