@@ -165,11 +165,11 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
     @param parent_node_uuid: the UUID of the parent node. All sub-nodes will be downloaded.
     @param desired_size: size indicator, from 'sbtmlh'.
     @param thumbnail_directory: directory in which to store the downloaded thumbnails.
-    @param thumbnail_loading: callback function that takes (pillarsdk.File object)
-        parameter, which is called before a thumbnail will be downloaded. This allows you to
+    @param thumbnail_loading: callback function that takes (node_id, pillarsdk.File object)
+        parameters, which is called before a thumbnail will be downloaded. This allows you to
         show a "downloading" indicator.
-    @param thumbnail_loaded: callback function that takes (pillarsdk.File object, thumbnail path)
-        parameters, which is called for every thumbnail after it's been downloaded.
+    @param thumbnail_loaded: callback function that takes (node_id, pillarsdk.File object,
+        thumbnail path) parameters, which is called for every thumbnail after it's been downloaded.
     """
 
     api = pillar_api()
@@ -187,7 +187,9 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
         # Find the File that belongs to this texture node
         pic_uuid = texture_node['picture']
         file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
-        loop.call_soon_threadsafe(functools.partial(thumbnail_loading, file_desc))
+        loop.call_soon_threadsafe(functools.partial(thumbnail_loading,
+                                                    texture_node['_id'],
+                                                    file_desc))
 
         if file_desc is None:
             print('Unable to find file for texture node {}'.format(pic_uuid))
@@ -197,7 +199,9 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
             thumb_path = await stream_thumb_to_file(file_desc, thumbnail_directory, desired_size)
             # print('Texture node {} has file {}'.format(texture_node['_id'], thumb_path))
 
-        loop.call_soon_threadsafe(functools.partial(thumbnail_loaded, file_desc, thumb_path))
+        loop.call_soon_threadsafe(functools.partial(thumbnail_loaded,
+                                                    texture_node['_id'],
+                                                    file_desc, thumb_path))
 
     # Download all texture nodes in parallel.
     texture_nodes = await get_nodes(parent_node_uuid=parent_node_uuid)

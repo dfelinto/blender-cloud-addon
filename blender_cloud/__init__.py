@@ -21,7 +21,7 @@
 bl_info = {
     "name": "Blender Cloud Texture Browser",
     "author": "Sybren A. Stüvel and Francesco Siddi",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (2, 77, 0),
     "location": "TO BE DETERMINED",
     "description": "Allows downloading of textures from the Blender Cloud. Requires "
@@ -32,23 +32,19 @@ bl_info = {
     "support": "TESTING"
 }
 
-import os.path
-import typing
-import asyncio
-
 # Support reloading
 if 'pillar' in locals():
     import importlib
 
     pillar = importlib.reload(pillar)
     async_loop = importlib.reload(async_loop)
+    gui = importlib.reload(gui)
 else:
-    from . import pillar, async_loop
+    from . import pillar, async_loop, gui
 
 import bpy
-import bpy.utils.previews
-from bpy.types import AddonPreferences, Operator, PropertyGroup, WindowManager
-from bpy.props import PointerProperty, StringProperty, EnumProperty
+from bpy.types import AddonPreferences, Operator, WindowManager
+from bpy.props import StringProperty
 
 
 class BlenderCloudPreferences(AddonPreferences):
@@ -132,134 +128,9 @@ class PillarCredentialsUpdate(Operator):
         return {'FINISHED'}
 
 
-# We can store multiple preview collections here,
-# however in this example we only store "main"
-preview_collections = {}
-
-
-def enum_previews_from_directory_items(self, context) -> typing.List[typing.AnyStr]:
-    """EnumProperty callback"""
-
-    if context is None:
-        return []
-
-    wm = context.window_manager
-    project_uuid = wm.blender_cloud_project
-    node_uuid = wm.blender_cloud_node
-
-    # Get the preview collection (defined in register func).
-    pcoll = preview_collections["blender_cloud"]
-    if pcoll.project_uuid == project_uuid and pcoll.node_uuid == node_uuid:
-        return pcoll.previews
-
-    print('Loading previews for project {!r} node {!r}'.format(project_uuid, node_uuid))
-
-    if pcoll.async_task is not None and not pcoll.async_task.done():
-        # We're still asynchronously downloading, but the UUIDs changed.
-        print('Cancelling running async download task {}'.format(pcoll.async_task))
-        pcoll.async_task.cancel()
-
-    # Download the previews asynchronously.
-    pcoll.previews = []
-    pcoll.project_uuid = project_uuid
-    pcoll.node_uuid = node_uuid
-    pcoll.async_task = asyncio.ensure_future(async_download_previews(wm.thumbnails_cache, pcoll))
-
-    # Start the async manager so everything happens.
-    async_loop.ensure_async_loop()
-
-    return pcoll.previews
-
-
-async def async_download_previews(thumbnails_directory, pcoll):
-    # If we have a node UUID, we fetch the textures
-    # FIXME: support mixture of sub-nodes and textures under one node.
-    enum_items = pcoll.previews
-
-    node_uuid = pcoll.node_uuid
-    project_uuid = pcoll.project_uuid
-
-    def thumbnail_loading(file_desc):
-        # TODO: trigger re-draw
-        pass
-
-    def thumbnail_loaded(file_desc, thumb_path):
-        thumb = pcoll.get(thumb_path)
-        if thumb is None:
-            thumb = pcoll.load(thumb_path, thumb_path, 'IMAGE')
-        enum_items.append(('thumb-{}'.format(thumb_path), file_desc['filename'],
-                           thumb_path,
-                           thumb.icon_id,
-                           len(enum_items)))
-        # TODO: trigger re-draw
-
-    if node_uuid:
-        # Make sure we can go up again.
-        parent = await pillar.parent_node_uuid(node_uuid)
-        enum_items.append(('node-{}'.format(parent), 'up', 'up',
-                           'FILE_FOLDER',
-                           len(enum_items)))
-
-        directory = os.path.join(thumbnails_directory, project_uuid, node_uuid)
-        os.makedirs(directory, exist_ok=True)
-
-        await pillar.fetch_texture_thumbs(node_uuid, 's', directory,
-                                          thumbnail_loading=thumbnail_loading,
-                                          thumbnail_loaded=thumbnail_loaded)
-    elif project_uuid:
-        children = await pillar.get_nodes(project_uuid, '')
-
-        for child in children:
-            print('  - %(_id)s = %(name)s' % child)
-            enum_items.append(('node-{}'.format(child['_id']), child['name'],
-                               'description',
-                               'FILE_FOLDER',
-                               len(enum_items)))
-            # TODO: trigger re-draw
-    else:
-        # TODO: add "nothing here" icon and trigger re-draw
-        pass
-
-
-def enum_previews_from_directory_update(self, context):
-    print('Updating from {!r}'.format(self.blender_cloud_thumbnails))
-
-    sel_type, sel_id = self.blender_cloud_thumbnails.split('-', 1)
-
-    if sel_type == 'node':
-        # Go into this node
-        self.blender_cloud_node = sel_id
-    elif sel_type == 'thumb':
-        # Select this image
-        pass
-    else:
-        print("enum_previews_from_directory_update: Don't know what to do with {!r}"
-              .format(self.blender_cloud_thumbnails))
-
-
-class PreviewsExamplePanel(bpy.types.Panel):
-    """Creates a Panel in the Object properties window"""
-
-    bl_label = "Previews Example Panel"
-    bl_idname = "OBJECT_PT_previews"
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "object"
-
-    def draw(self, context):
-        layout = self.layout
-        wm = context.window_manager
-
-        row = layout.column()
-        row.prop(wm, "thumbnails_cache")
-        row.prop(wm, "blender_cloud_project")
-        row.prop(wm, "blender_cloud_node")
-        row.template_icon_view(wm, "blender_cloud_thumbnails", show_labels=True)
-        # row.prop(wm, "blender_cloud_thumbnails")
-
-
 def register():
-    bpy.utils.register_module(__name__)
+    bpy.utils.register_class(BlenderCloudPreferences)
+    bpy.utils.register_class(PillarCredentialsUpdate)
 
     WindowManager.thumbnails_cache = StringProperty(
         name="Thumbnails cache",
@@ -274,39 +145,18 @@ def register():
         name="Blender Cloud node UUID",
         default='')  # empty == top-level of project
 
-    WindowManager.blender_cloud_thumbnails = EnumProperty(
-        items=enum_previews_from_directory_items,
-        update=enum_previews_from_directory_update,
-    )
-
-    # Note that preview collections returned by bpy.utils.previews
-    # are regular Python objects - you can use them to store custom data.
-    #
-    # This is especially useful here, since:
-    # - It avoids us regenerating the whole enum over and over.
-    # - It can store enum_items' strings
-    #   (remember you have to keep those strings somewhere in py,
-    #   else they get freed and Blender references invalid memory!).
-    pcoll = bpy.utils.previews.new()
-    pcoll.previews = ()
-    pcoll.project_uuid = ''
-    pcoll.node_uuid = ''
-    pcoll.async_task = None
-
-    preview_collections["blender_cloud"] = pcoll
+    gui.register()
 
 
 def unregister():
-    bpy.utils.unregister_module(__name__)
+    gui.unregister()
 
-    del WindowManager.thumbnails_cache
+    bpy.utils.unregister_class(PillarCredentialsUpdate)
+    bpy.utils.unregister_class(BlenderCloudPreferences)
+
     del WindowManager.blender_cloud_project
     del WindowManager.blender_cloud_node
     del WindowManager.blender_cloud_thumbnails
-
-    for pcoll in preview_collections.values():
-        bpy.utils.previews.remove(pcoll)
-    preview_collections.clear()
 
 
 if __name__ == "__main__":

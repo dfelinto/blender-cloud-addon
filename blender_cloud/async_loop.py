@@ -1,6 +1,8 @@
 """Manages the asyncio loop."""
 
 import asyncio
+import traceback
+
 import bpy
 
 
@@ -12,8 +14,24 @@ def kick_async_loop(*args):
         stop_async_loop()
         return
 
-    if not asyncio.Task.all_tasks():
+    all_tasks = asyncio.Task.all_tasks()
+    if not all_tasks:
         print('{}: no more scheduled tasks, stopping'.format(__name__))
+        stop_async_loop()
+        return
+
+    if all(task.done() for task in all_tasks):
+        print('{}: all tasks are done, fetching results and stopping.'.format(__name__))
+        for task in all_tasks:
+            # noinspection PyBroadException
+            try:
+                task.result()
+            except asyncio.CancelledError:
+                # No problem, we want to stop anyway.
+                pass
+            except Exception:
+                print('{}: resulted in exception'.format(task))
+                traceback.print_exc()
         stop_async_loop()
         return
 
@@ -43,7 +61,3 @@ def stop_async_loop():
     if handler is None:
         return
     bpy.app.handlers.scene_update_pre.remove(handler)
-
-    # Optional: cancel all pending tasks.
-    # for task in asyncio.Task.all_tasks():
-    #     task.cancel()
