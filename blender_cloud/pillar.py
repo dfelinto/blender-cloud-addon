@@ -179,12 +179,10 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
         'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
     }, api=api)
 
-    # TODO: Still single-threaded, could branch out to a few threads here to download in parallel.
-    texture_nodes = await get_nodes(parent_node_uuid=parent_node_uuid)
-    for texture_node in texture_nodes:
+    async def handle_texture_node(texture_node):
         # Skip non-texture nodes, as we can't thumbnail them anyway.
         if texture_node['node_type'] != 'texture':
-            continue
+            return
 
         # Find the File that belongs to this texture node
         pic_uuid = texture_node['picture']
@@ -200,6 +198,13 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
             # print('Texture node {} has file {}'.format(texture_node['_id'], thumb_path))
 
         loop.call_soon_threadsafe(functools.partial(thumbnail_loaded, file_desc, thumb_path))
+
+    # Download all texture nodes in parallel.
+    texture_nodes = await get_nodes(parent_node_uuid=parent_node_uuid)
+
+    # raises any exception from failed handle_texture_node() calls.
+    await asyncio.gather(*(handle_texture_node(texture_node)
+                           for texture_node in texture_nodes))
 
     print('Done downloading texture thumbnails')
 
