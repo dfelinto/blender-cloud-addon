@@ -128,7 +128,7 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
     return children['_items']
 
 
-async def download_to_file(url, filename, chunk_size=10 * 1024, *, future: asyncio.Future = None):
+async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyncio.Future = None):
     """Downloads a file via HTTP(S) directly to the filesystem."""
 
     # TODO: use the file's ETag header to check whether we need to redownload the file at all.
