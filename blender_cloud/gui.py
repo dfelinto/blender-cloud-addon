@@ -163,6 +163,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
     _draw_handle = None
 
+    _state = 'BROWSING'
+
     project_uuid = '5672beecc0261b2005ed1a33'  # Blender Cloud project UUID
     node_uuid = ''  # Blender Cloud node UUID
     async_task = None  # asyncio task for fetching thumbnails
@@ -202,11 +204,19 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.browse_assets()
 
         context.window_manager.modal_handler_add(self)
-        self.timer = context.window_manager.event_timer_add(1/30, context.window)
+        self.timer = context.window_manager.event_timer_add(1 / 30, context.window)
 
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        if self._state == 'QUIT':
+            self._finish(context)
+            return {'FINISHED'}
+
+        if event.type == 'TAB' and event.value == 'RELEASE':
+            self.log.info('Ensuring async loop is running')
+            async_loop.ensure_async_loop()
+
         if event.type == 'TIMER':
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
@@ -216,7 +226,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
             self.mouse_x = event.mouse_region_x
             self.mouse_y = event.mouse_region_y
 
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+        if self._state == 'BROWSING' and event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             selected = self.get_clicked()
 
             if selected is None:
@@ -227,9 +237,12 @@ class BlenderCloudBrowser(bpy.types.Operator):
                 self.node_uuid = selected.node_uuid
                 self.browse_assets()
             else:
-                self.handle_item_selection(selected)
-                self._finish(context)
-                return {'FINISHED'}
+                if selected.file_desc is None:
+                    # This can happen when the thumbnail information isn't loaded yet.
+                    # Just ignore the click for now.
+                    # TODO: think of a way to handle this properly.
+                    return {'RUNNING_MODAL'}
+                self.handle_item_selection(context, selected)
 
         elif event.type in {'RIGHTMOUSE', 'ESC'}:
             self._finish(context)
@@ -352,27 +365,49 @@ class BlenderCloudBrowser(bpy.types.Operator):
         else:
             # TODO: add "nothing here" icon and trigger re-draw
             self.log.warning("Not node UUID and no project UUID, I can't do anything!")
-            pass
-
-        loop = asyncio.get_event_loop()
-        loop.call_soon_threadsafe(self.downloading_done)
 
     def browse_assets(self):
+        self._state = 'BROWSING'
         self.log.debug('Browsing assets at project %r node %r', self.project_uuid, self.node_uuid)
+        self._new_async_task(self.async_download_previews(self.thumbnails_cache))
+
+    def _new_async_task(self, async_task: asyncio.coroutine):
+        """Stops the currently running async task, and starts another one."""
+
+        self.log.debug('Setting up a new task %r, so any existing task must be stopped', async_task)
         self._stop_async_task()
 
         # Download the previews asynchronously.
         self.signalling_future = asyncio.Future()
-        self.async_task = asyncio.ensure_future(
-            self.async_download_previews(self.thumbnails_cache))
+        self.async_task = asyncio.ensure_future(async_task)
+        self.log.debug('Created new task %r', self.async_task)
 
         # Start the async manager so everything happens.
         async_loop.ensure_async_loop()
 
-    def downloading_done(self):
-        self.log.info('Done downloading thumbnails.')
-
     def draw_menu(self, context):
+        """Draws the GUI with OpenGL."""
+
+        drawers = {
+            'BROWSING': self._draw_browser,
+            'DOWNLOADING_TEXTURE': self._draw_downloading,
+        }
+
+        if self._state in drawers:
+            drawer = drawers[self._state]
+            drawer(context)
+
+        # For debugging: draw the state
+        font_id = 0
+        bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
+        blf.size(font_id, 20, 72)
+        blf.position(font_id, 5, 5, 0)
+        blf.draw(font_id, self._state)
+        bgl.glDisable(bgl.GL_BLEND)
+
+    def _draw_browser(self, context):
+        """OpenGL drawing code for the BROWSING state."""
+
         margin_x = 20
         margin_y = 5
         padding_x = 5
@@ -415,6 +450,28 @@ class BlenderCloudBrowser(bpy.types.Operator):
         bgl.glDisable(bgl.GL_BLEND)
         # bgl.glColor4f(0.0, 0.0, 0.0, 1.0)
 
+    def _draw_downloading(self, context):
+        """OpenGL drawing code for the DOWNLOADING_TEXTURE state."""
+
+        content_width = context.area.regions[4].width
+        content_height = context.area.regions[4].height
+
+        bgl.glEnable(bgl.GL_BLEND)
+        bgl.glColor4f(0.0, 0.0, 0.2, 0.6)
+        bgl.glRectf(0, 0, content_width, content_height)
+
+        font_id = 0
+        text = "Downloading texture from Blender Cloud"
+        bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
+        blf.size(font_id, 20, 72)
+        text_width, text_height = blf.dimensions(font_id, text)
+
+        blf.position(font_id,
+                     content_width * 0.5 - text_width * 0.5,
+                     content_height * 0.7 + text_height * 0.5, 0)
+        blf.draw(font_id, text)
+        bgl.glDisable(bgl.GL_BLEND)
+
     def get_clicked(self) -> MenuItem:
 
         for item in self.current_display_content:
@@ -423,9 +480,21 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         return None
 
-    def handle_item_selection(self, item: MenuItem):
+    def handle_item_selection(self, context, item: MenuItem):
         """Called when the user clicks on a menu item that doesn't represent a folder."""
-        pass
+
+        self._state = 'DOWNLOADING_TEXTURE'
+        url = item.file_desc.link
+        local_path = os.path.join(context.scene.blender_cloud_dir, item.file_desc.filename)
+        local_path = bpy.path.abspath(local_path)
+        self.log.info('Downloading %s to %s', url, local_path)
+
+        def texture_download_completed(_):
+            self.log.info('Texture download complete, inspect %r.', local_path)
+            self._state = 'QUIT'
+
+        self._new_async_task(pillar.download_to_file(url, local_path))
+        self.async_task.add_done_callback(texture_download_completed)
 
 
 # store keymaps here to access after registration

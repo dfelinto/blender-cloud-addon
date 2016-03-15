@@ -45,7 +45,7 @@ else:
 import logging
 
 import bpy
-from bpy.types import AddonPreferences, Operator, WindowManager
+from bpy.types import AddonPreferences, Operator, WindowManager, Scene
 from bpy.props import StringProperty
 
 
@@ -147,7 +147,12 @@ def register():
         name="Blender Cloud node UUID",
         default='')  # empty == top-level of project
 
-    logging.basicConfig(level=logging.INFO,
+    Scene.blender_cloud_dir = StringProperty(
+        name='Blender Cloud texture storage directory',
+        subtype='DIR_PATH',
+        default='//textures')
+
+    logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)-15s %(levelname)8s %(name)s %(message)s')
     async_loop.setup_asyncio_executor()
     gui.register()
