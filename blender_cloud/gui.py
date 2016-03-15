@@ -60,6 +60,10 @@ class MenuItem:
     }
 
     def __init__(self, node_uuid: str, file_desc, thumb_path: str, label_text):
+        # TODO: change node_uuid to the actual pillarsdk.Node object.
+        # That way we can simply inspect node.node_type to distinguish between
+        # folders ('group_texture' type) and files ('texture' type).
+
         self.node_uuid = node_uuid  # pillarsdk.Node UUID of a texture node
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
         self.label_text = label_text
