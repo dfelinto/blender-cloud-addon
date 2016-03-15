@@ -33,20 +33,21 @@ def kick_async_loop(*args):
         return
 
     all_tasks = asyncio.Task.all_tasks()
-    if not all_tasks:
+    if not len(all_tasks):
         log.debug('no more scheduled tasks, stopping')
         stop_async_loop()
         return
 
     if all(task.done() for task in all_tasks):
-        log.info('all tasks are done, fetching results and stopping.'.format(__name__))
-        for task in all_tasks:
+        log.info('all %i tasks are done, fetching results and stopping.', len(all_tasks))
+        for task_idx, task in enumerate(all_tasks):
             # noinspection PyBroadException
             try:
-                task.result()
+                res = task.result()
+                log.debug('   task #%i: result=%r', task_idx, res)
             except asyncio.CancelledError:
                 # No problem, we want to stop anyway.
-                pass
+                log.debug('   task #%i: cancelled', task_idx)
             except Exception:
                 print('{}: resulted in exception'.format(task))
                 traceback.print_exc()
@@ -54,10 +55,12 @@ def kick_async_loop(*args):
         return
 
     # Perform a single async loop step
-    async def do_nothing():
-        pass
+    def stop_loop(future):
+        future.set_result('done')
 
-    loop.run_until_complete(do_nothing())
+    future = asyncio.Future()
+    loop.call_later(0.005, stop_loop, future)
+    loop.run_until_complete(future)
 
 
 def async_loop_handler() -> callable:
