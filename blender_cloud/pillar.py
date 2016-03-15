@@ -302,8 +302,9 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
 
 
 def is_cancelled(future: asyncio.Future) -> bool:
-    log.debug('%s.cancelled() = %s', future, future.cancelled())
-    return future is not None and future.cancelled()
+    cancelled = future is not None and future.cancelled()
+    log.debug('%s.cancelled() = %s', future, cancelled)
+    return cancelled
 
 
 async def parent_node_uuid(node_uuid: str) -> str:
