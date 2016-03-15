@@ -131,7 +131,12 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
 async def download_to_file(url, filename, chunk_size=10 * 1024, *, future: asyncio.Future = None):
     """Downloads a file via HTTP(S) directly to the filesystem."""
 
+    # TODO: use the file's ETag header to check whether we need to redownload the file at all.
+
     loop = asyncio.get_event_loop()
+
+    # Separated doing the GET and downloading the body of the GET, so that we can cancel
+    # the download in between.
 
     def perform_get_request():
         return requests.get(url, stream=True, verify=True)
@@ -164,22 +169,23 @@ async def download_to_file(url, filename, chunk_size=10 * 1024, *, future: async
     log.debug('Done downloading response of GET %s', url)
 
 
-async def stream_thumb_to_file(file: pillarsdk.File, directory: str, desired_size: str, *,
+async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_size: str, *,
                                future: asyncio.Future = None):
-    """Streams a thumbnail to a file.
+    """Fetches thumbnail information from Pillar.
 
     @param file: the pillar File object that represents the image whose thumbnail to download.
     @param directory: the directory to save the file to.
     @param desired_size: thumbnail size
-    @return: the absolute path of the downloaded file, or None if the task was cancelled before
-        downloading finished.
+    @return: (url, path), where 'url' is the URL to download the thumbnail from, and 'path' is the absolute path of the
+        where the thumbnail should be downloaded to. Returns None, None if the task was cancelled before downloading
+        finished.
     """
 
     api = pillar_api()
 
     if is_cancelled(future):
         log.debug('stream_thumb_to_file(): cancelled before fetching thumbnail URL from Pillar')
-        return None
+        return None, None
 
     loop = asyncio.get_event_loop()
     thumb_link = await loop.run_in_executor(None, functools.partial(
@@ -191,15 +197,13 @@ async def stream_thumb_to_file(file: pillarsdk.File, directory: str, desired_siz
 
     if is_cancelled(future):
         log.debug('stream_thumb_to_file(): cancelled before downloading file')
-        return None
+        return None, None
 
     root, ext = os.path.splitext(file['file_path'])
     thumb_fname = "{0}-{1}.jpg".format(root, desired_size)
     thumb_path = os.path.abspath(os.path.join(directory, thumb_fname))
 
-    await download_to_file(thumb_link, thumb_path, future=future)
-
-    return thumb_path
+    return thumb_link, thumb_path
 
 
 async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
@@ -255,16 +259,16 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
                           file_desc['_id'])
                 return
 
-            # Save the thumbnail
-            thumb_path = await stream_thumb_to_file(file_desc, thumbnail_directory, desired_size,
-                                                    future=future)
+            # Get the thumbnail information from Pillar
+            thumb_url, thumb_path = await fetch_thumbnail_info(file_desc, thumbnail_directory, desired_size,
+                                                               future=future)
             if thumb_path is None:
                 # The task got cancelled, we should abort too.
                 log.debug('fetch_texture_thumbs cancelled while downloading file %r',
                           file_desc['_id'])
                 return
 
-                # print('Texture node {} has file {}'.format(texture_node['_id'], thumb_path))
+            await download_to_file(thumb_url, thumb_path, future=future)
 
         loop.call_soon_threadsafe(functools.partial(thumbnail_loaded,
                                                     texture_node['_id'],
