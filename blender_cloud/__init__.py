@@ -42,6 +42,8 @@ if 'pillar' in locals():
 else:
     from . import pillar, async_loop, gui
 
+import logging
+
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager
 from bpy.props import StringProperty
@@ -145,6 +147,8 @@ def register():
         name="Blender Cloud node UUID",
         default='')  # empty == top-level of project
 
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)-15s %(levelname)8s %(name)s %(message)s')
     gui.register()
 
 

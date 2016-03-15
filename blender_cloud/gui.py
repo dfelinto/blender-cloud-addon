@@ -19,7 +19,9 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 import asyncio
+import logging
 import threading
+import traceback
 
 import bpy
 import bgl
@@ -160,6 +162,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
     node_uuid = ''  # Blender Cloud node UUID
     async_task = None  # asyncio task for fetching thumbnails
     timer = None
+    log = logging.getLogger('%s.BlenderCloudBrowser' % __name__)
 
     _menu_item_lock = threading.Lock()
     current_path = ''
@@ -172,10 +175,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
     def invoke(self, context, event):
         if context.area.type != 'VIEW_3D':
-            self.report({'WARNING'}, "View3D not found, cannot show asset flinger")
+            self.report({'WARNING'}, "View3D not found, cannot show Blender Cloud browser")
             return {'CANCELLED'}
-
-        print('Area is %s' % context.area)
 
         wm = context.window_manager
         self.thumbnails_cache = wm.thumbnails_cache
@@ -241,10 +242,12 @@ class BlenderCloudBrowser(bpy.types.Operator):
             self.async_task.result()  # This re-raises any exception of the task.
 
     def _finish(self, context):
+        self.log.debug('Finishing the modal operator')
         self._stop_async_task()
         bpy.types.SpaceView3D.draw_handler_remove(self._draw_handle, 'WINDOW')
         context.window_manager.event_timer_remove(self.timer)
         context.area.tag_redraw()
+        self.log.debug('Modal operator finished')
 
     def clear_images(self):
         """Removes all images we loaded from Blender's memory."""

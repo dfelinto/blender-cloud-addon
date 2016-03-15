@@ -2,26 +2,29 @@
 
 import asyncio
 import traceback
+import logging
 
 import bpy
+
+log = logging.getLogger(__name__)
 
 
 def kick_async_loop(*args):
     loop = asyncio.get_event_loop()
 
     if loop.is_closed():
-        print('{}: loop closed, stopping'.format(__name__))
+        log.warning('loop closed, stopping')
         stop_async_loop()
         return
 
     all_tasks = asyncio.Task.all_tasks()
     if not all_tasks:
-        print('{}: no more scheduled tasks, stopping'.format(__name__))
+        log.debug('no more scheduled tasks, stopping')
         stop_async_loop()
         return
 
     if all(task.done() for task in all_tasks):
-        print('{}: all tasks are done, fetching results and stopping.'.format(__name__))
+        log.info('all tasks are done, fetching results and stopping.'.format(__name__))
         for task in all_tasks:
             # noinspection PyBroadException
             try:
@@ -43,6 +46,12 @@ def kick_async_loop(*args):
 
 
 def async_loop_handler() -> callable:
+    """Returns the asynchronous loop handler `kick_async_loop`
+
+    Only returns the function if it is installed as scene_update_pre handler, otherwise
+    it returns None.
+    """
+
     name = kick_async_loop.__name__
     for handler in bpy.app.handlers.scene_update_pre:
         if getattr(handler, '__name__', '') == name:
@@ -61,3 +70,4 @@ def stop_async_loop():
     if handler is None:
         return
     bpy.app.handlers.scene_update_pre.remove(handler)
+    log.debug('stopped async loop.')

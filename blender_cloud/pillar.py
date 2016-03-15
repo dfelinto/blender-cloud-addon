@@ -2,6 +2,7 @@ import asyncio
 import sys
 import os
 import functools
+import logging
 
 # Add our shipped Pillar SDK wheel to the Python path
 if not any('pillar_sdk' in path for path in sys.path):
@@ -17,6 +18,7 @@ import pillarsdk.exceptions
 import pillarsdk.utils
 
 _pillar_api = None  # will become a pillarsdk.Api object.
+log = logging.getLogger(__name__)
 
 
 class UserNotLoggedInError(RuntimeError):
@@ -75,10 +77,10 @@ async def get_project_uuid(project_url: str) -> str:
     try:
         project = await loop.run_in_executor(None, find_one)
     except pillarsdk.exceptions.ResourceNotFound:
-        print('Project with URL %r does not exist' % project_url)
+        log.error('Project with URL %r does not exist', project_url)
         return None
 
-    print('Found project %r' % project)
+    log.info('Found project %r', project)
     return project['_id']
 
 
@@ -218,10 +220,12 @@ async def parent_node_uuid(node_uuid: str) -> str:
     api = pillar_api()
     loop = asyncio.get_event_loop()
 
+    log.debug('Finding parent node for node %r', node_uuid)
     find_node = functools.partial(pillarsdk.Node.find, node_uuid,
                                   {'projection': {'parent': 1}}, api=api)
     node = await loop.run_in_executor(None, find_node)
     if node is None:
+        log.debug('Unable to find node %r, returning empty parent', node_uuid)
         return ''
 
     print('Found node {}'.format(node))
