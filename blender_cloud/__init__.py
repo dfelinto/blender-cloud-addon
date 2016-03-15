@@ -149,6 +149,7 @@ def register():
 
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)-15s %(levelname)8s %(name)s %(message)s')
+    async_loop.setup_asyncio_executor()
     gui.register()
 
 

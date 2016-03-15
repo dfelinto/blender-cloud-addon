@@ -2,11 +2,26 @@
 
 import asyncio
 import traceback
+import concurrent.futures
 import logging
 
 import bpy
 
 log = logging.getLogger(__name__)
+
+
+def setup_asyncio_executor():
+    """Sets up AsyncIO to run on a single thread.
+
+    This ensures that only one Pillar HTTP call is performed at the same time. Other
+    calls that could be performed in parallel are queued, and thus we can
+    reliably cancel them.
+    """
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    loop = asyncio.get_event_loop()
+    loop.set_default_executor(executor)
+    # loop.set_debug(True)
 
 
 def kick_async_loop(*args):

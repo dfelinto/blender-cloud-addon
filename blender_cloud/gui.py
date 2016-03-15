@@ -65,6 +65,7 @@ class MenuItem:
         self.label_text = label_text
         self._thumb_path = ''
         self.icon = None
+        self._is_folder = file_desc is None and thumb_path == 'FOLDER'
 
         self.thumb_path = thumb_path
 
@@ -93,7 +94,7 @@ class MenuItem:
 
     @property
     def is_folder(self) -> bool:
-        return self.file_desc is None
+        return self._is_folder
 
     def update_placement(self, x, y, width, height):
         """Use OpenGL to draw this one menu item."""
@@ -161,6 +162,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
     project_uuid = '5672beecc0261b2005ed1a33'  # Blender Cloud project UUID
     node_uuid = ''  # Blender Cloud node UUID
     async_task = None  # asyncio task for fetching thumbnails
+    signalling_future = None  # asyncio future for signalling that we want to cancel everything.
     timer = None
     log = logging.getLogger('%s.BlenderCloudBrowser' % __name__)
 
@@ -193,7 +195,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         self.current_display_content = []
         self.loaded_images = set()
-        self.browse_assets(context)
+        self.browse_assets()
 
         context.window_manager.modal_handler_add(self)
         self.timer = context.window_manager.event_timer_add(1/30, context.window)
@@ -219,7 +221,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
             if selected.is_folder:
                 self.node_uuid = selected.node_uuid
-                self.browse_assets(context)
+                self.browse_assets()
             else:
                 self.handle_item_selection(selected)
                 self._finish(context)
@@ -232,14 +234,33 @@ class BlenderCloudBrowser(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def _stop_async_task(self):
+        self.log.debug('Stopping async task')
         if self.async_task is None:
+            self.log.debug('No async task, trivially stopped')
             return
 
+        # Signal that we want to stop.
+        if not self.signalling_future.done():
+            self.log.info("Signalling that we want to cancel anything that's running.")
+            self.signalling_future.cancel()
+
+        # Wait until the asynchronous task is done.
         if not self.async_task.done():
-            print('Cancelling running async download task {}'.format(self.async_task))
-            self.async_task.cancel()
-        else:
+            self.log.info("blocking until async task is done.")
+            loop = asyncio.get_event_loop()
+            try:
+                loop.run_until_complete(self.async_task)
+            except asyncio.CancelledError:
+                self.log.info('Asynchronous task was cancelled')
+                return
+
+        # noinspection PyBroadException
+        try:
             self.async_task.result()  # This re-raises any exception of the task.
+        except asyncio.CancelledError:
+            self.log.info('Asynchronous task was cancelled')
+        except Exception:
+            self.log.exception("Exception from asynchronous task")
 
     def _finish(self, context):
         self.log.debug('Finishing the modal operator')
@@ -283,74 +304,69 @@ class BlenderCloudBrowser(bpy.types.Operator):
             else:
                 raise ValueError('Unable to find MenuItem(node_uuid=%r)' % node_uuid)
 
-    async def async_download_previews(self, context, thumbnails_directory):
-        # If we have a node UUID, we fetch the textures
-        # FIXME: support mixture of sub-nodes and textures under one node.
+    async def async_download_previews(self, thumbnails_directory):
+        self.log.info('Asynchronously downloading previews to %r', thumbnails_directory)
         self.clear_images()
-
-        def redraw():
-            # region = context.region
-            # if region is None:
-            #     print('Unable to redraw, region is %s' % region)
-            #     print('  (context is %s)' % context)
-            #     return
-            # region.tag_redraw()
-            pass
 
         def thumbnail_loading(node_uuid, texture_node):
             self.add_menu_item(node_uuid, None, 'SPINNER', texture_node['name'])
-            redraw()
 
         def thumbnail_loaded(node_uuid, file_desc, thumb_path):
-            # update MenuItem added above
             self.update_menu_item(node_uuid, file_desc, thumb_path, file_desc['filename'])
-            redraw()
 
         if self.node_uuid:
+            self.log.debug('Getting subnodes for parent node %r', self.node_uuid)
+            children = await pillar.get_nodes(parent_node_uuid=self.node_uuid,
+                                              node_type='group_textures')
+
+            self.log.debug('Finding parent of node %r', self.node_uuid)
             # Make sure we can go up again.
             parent_uuid = await pillar.parent_node_uuid(self.node_uuid)
             self.add_menu_item(parent_uuid, None, 'FOLDER', '.. up ..')
 
+            self.log.debug('Iterating over child nodes of %r', self.node_uuid)
+            for child in children:
+                # print('  - %(_id)s = %(name)s' % child)
+                self.add_menu_item(child['_id'], None, 'FOLDER', child['name'])
+
             directory = os.path.join(thumbnails_directory, self.project_uuid, self.node_uuid)
             os.makedirs(directory, exist_ok=True)
 
+            self.log.debug('Fetching texture thumbnails for node %r', self.node_uuid)
             await pillar.fetch_texture_thumbs(self.node_uuid, 's', directory,
                                               thumbnail_loading=thumbnail_loading,
-                                              thumbnail_loaded=thumbnail_loaded)
+                                              thumbnail_loaded=thumbnail_loaded,
+                                              future=self.signalling_future)
         elif self.project_uuid:
+            self.log.debug('Getting subnodes for project node %r', self.project_uuid)
             children = await pillar.get_nodes(self.project_uuid, '')
 
+            self.log.debug('Iterating over child nodes of project %r', self.project_uuid)
             for child in children:
-                print('  - %(_id)s = %(name)s' % child)
+                # print('  - %(_id)s = %(name)s' % child)
                 self.add_menu_item(child['_id'], None, 'FOLDER', child['name'])
-            redraw()
         else:
             # TODO: add "nothing here" icon and trigger re-draw
-            redraw()
+            self.log.warning("Not node UUID and no project UUID, I can't do anything!")
+            pass
 
-        # Call the 'done' callback.
         loop = asyncio.get_event_loop()
         loop.call_soon_threadsafe(self.downloading_done)
 
-    def browse_assets(self, context):
+    def browse_assets(self):
+        self.log.debug('Browsing assets at project %r node %r', self.project_uuid, self.node_uuid)
         self._stop_async_task()
-        self.clear_images()
 
         # Download the previews asynchronously.
+        self.signalling_future = asyncio.Future()
         self.async_task = asyncio.ensure_future(
-            self.async_download_previews(context, self.thumbnails_cache))
+            self.async_download_previews(self.thumbnails_cache))
 
         # Start the async manager so everything happens.
         async_loop.ensure_async_loop()
 
     def downloading_done(self):
-        # if not self.async_task.done():
-        #     print('%s: aborting download task' % self)
-        #     self._stop_async_task()
-        # else:
-        #     print('%s: downloading done' % self)
-        #     self.async_task.result()
-        pass
+        self.log.info('Done downloading thumbnails.')
 
     def draw_menu(self, context):
         margin_x = 20
