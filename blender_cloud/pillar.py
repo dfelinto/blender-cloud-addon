@@ -143,6 +143,8 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
 
     # Download the file in a different thread.
     def download_loop():
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+
         with closing(req), open(filename, 'wb') as outfile:
             for block in req.iter_content(chunk_size=chunk_size):
                 if is_cancelled(future):
