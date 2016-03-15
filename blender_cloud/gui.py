@@ -177,26 +177,28 @@ class BlenderCloudBrowser(bpy.types.Operator):
     current_display_content = []
     loaded_images = set()
     thumbnails_cache = ''
+    maximized_area = False
 
     mouse_x = 0
     mouse_y = 0
 
     def invoke(self, context, event):
-        if context.area.type != 'VIEW_3D':
-            self.report({'WARNING'}, "View3D not found, cannot show Blender Cloud browser")
-            return {'CANCELLED'}
-
         wm = context.window_manager
         self.thumbnails_cache = wm.thumbnails_cache
         self.project_uuid = wm.blender_cloud_project
         self.node_uuid = wm.blender_cloud_node
 
-        self.mouse_x = event.mouse_region_x
-        self.mouse_y = event.mouse_region_y
+        self.mouse_x = event.mouse_x
+        self.mouse_y = event.mouse_y
+
+        # See if we have to maximize the current area
+        if not context.screen.show_fullscreen:
+            self.maximized_area = True
+            bpy.ops.screen.screen_full_area(use_hide_panels=True)
 
         # Add the region OpenGL drawing callback
         # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
-        self._draw_handle = bpy.types.SpaceView3D.draw_handler_add(
+        self._draw_handle = context.space_data.draw_handler_add(
             self.draw_menu, (context,), 'WINDOW', 'POST_PIXEL')
 
         self.current_display_content = []
@@ -223,13 +225,14 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         if 'MOUSE' in event.type:
             context.area.tag_redraw()
-            self.mouse_x = event.mouse_region_x
-            self.mouse_y = event.mouse_region_y
+            self.mouse_x = event.mouse_x
+            self.mouse_y = event.mouse_y
 
         if self._state == 'BROWSING' and event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             selected = self.get_clicked()
 
             if selected is None:
+                self.log.info('Click did not hit any menu item, closing.')
                 self._finish(context)
                 return {'FINISHED'}
 
@@ -282,8 +285,12 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def _finish(self, context):
         self.log.debug('Finishing the modal operator')
         self._stop_async_task()
-        bpy.types.SpaceView3D.draw_handler_remove(self._draw_handle, 'WINDOW')
+        context.space_data.draw_handler_remove(self._draw_handle, 'WINDOW')
         context.window_manager.event_timer_remove(self.timer)
+
+        if self.maximized_area:
+            bpy.ops.screen.screen_full_area(use_hide_panels=True)
+
         context.area.tag_redraw()
         self.log.debug('Modal operator finished')
 
@@ -405,6 +412,13 @@ class BlenderCloudBrowser(bpy.types.Operator):
         blf.draw(font_id, self._state)
         bgl.glDisable(bgl.GL_BLEND)
 
+    @staticmethod
+    def _window_region(context):
+        window_regions = [region
+                          for region in context.area.regions
+                          if region.type == 'WINDOW']
+        return window_regions[0]
+
     def _draw_browser(self, context):
         """OpenGL drawing code for the BROWSING state."""
 
@@ -412,8 +426,9 @@ class BlenderCloudBrowser(bpy.types.Operator):
         margin_y = 5
         padding_x = 5
 
-        content_width = context.area.regions[4].width - margin_x * 2
-        content_height = context.area.regions[4].height - margin_y * 2
+        window_region = self._window_region(context)
+        content_width = window_region.width - margin_x * 2
+        content_height = window_region.height - margin_y * 2
 
         content_x = margin_x
         content_y = context.area.height - margin_y - target_item_height - 50
@@ -428,7 +443,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         bgl.glEnable(bgl.GL_BLEND)
         bgl.glColor4f(0.0, 0.0, 0.0, 0.6)
-        bgl.glRectf(0, 0, context.area.regions[4].width, context.area.regions[4].height)
+        bgl.glRectf(0, 0, window_region.width, window_region.height)
 
         if self.current_display_content:
             for item_idx, item in enumerate(self.current_display_content):
@@ -453,8 +468,9 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def _draw_downloading(self, context):
         """OpenGL drawing code for the DOWNLOADING_TEXTURE state."""
 
-        content_width = context.area.regions[4].width
-        content_height = context.area.regions[4].height
+        window_region = self._window_region(context)
+        content_width = window_region.width
+        content_height = window_region.height
 
         bgl.glEnable(bgl.GL_BLEND)
         bgl.glColor4f(0.0, 0.0, 0.2, 0.6)
@@ -518,7 +534,7 @@ def register():
         print('No addon key configuration space found, so no custom hotkeys added.')
         return
 
-    km = kc.keymaps.new(name='3D View', space_type='VIEW_3D')
+    km = kc.keymaps.new(name='Screen')
     kmi = km.keymap_items.new('pillar.browser', 'A', 'PRESS', ctrl=True, shift=True, alt=True)
     addon_keymaps.append((km, kmi))
 
