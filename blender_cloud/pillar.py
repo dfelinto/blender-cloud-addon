@@ -7,6 +7,8 @@ from contextlib import closing
 
 import requests
 
+from . import cache
+
 # Add our shipped Pillar SDK wheel to the Python path
 if not any('pillar_sdk' in path for path in sys.path):
     import glob
@@ -19,6 +21,7 @@ if not any('pillar_sdk' in path for path in sys.path):
 import pillarsdk
 import pillarsdk.exceptions
 import pillarsdk.utils
+
 
 _pillar_api = None  # will become a pillarsdk.Api object.
 log = logging.getLogger(__name__)
@@ -60,6 +63,7 @@ def pillar_api() -> pillarsdk.Api:
 
     if _pillar_api is None:
         endpoint = bpy.context.user_preferences.addons['blender_cloud'].preferences.pillar_server
+        pillarsdk.Api.requests_session = cache.requests_session()
         _pillar_api = pillarsdk.Api(endpoint=endpoint,
                                     username=profile['username'],
                                     password=None,

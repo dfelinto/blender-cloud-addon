@@ -39,10 +39,12 @@ if 'pillar' in locals():
     pillar = importlib.reload(pillar)
     async_loop = importlib.reload(async_loop)
     gui = importlib.reload(gui)
+    cache = importlib.reload(cache)
 else:
-    from . import pillar, async_loop, gui
+    from . import pillar, async_loop, gui, cache
 
 import logging
+import os.path
 
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene
@@ -137,7 +139,7 @@ def register():
     WindowManager.thumbnails_cache = StringProperty(
         name="Thumbnails cache",
         subtype='DIR_PATH',
-        default='/home/sybren/.cache/blender_cloud/thumbnails')
+        default=os.path.join(cache.cache_directory(), 'thumbnails'))
 
     WindowManager.blender_cloud_project = StringProperty(
         name="Blender Cloud project UUID",
