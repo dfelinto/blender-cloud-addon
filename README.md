@@ -26,10 +26,11 @@ Communication & File Structure
 
 Caching is performed at different levels:
 
-* Caching of HTTP GET requests is performed by [Requests-Cache](https://readthedocs.org/projects/requests-cache/).
+* Caching of HTTP GET requests is performed by [CacheControl](https://cachecontrol.readthedocs.org/).
   
-    * Cache is stored in `$CACHE/blender_cloud.sqlite`; by using the SQLite backend,
-      we ensure cache persistence across Blender runs.
+    * Cache is stored in `$CACHE/blender_cloud_http/`; by using the file
+      backend, we ensure cache persistence across Blender runs. This
+      does require the `lockfile` package to be installed or bundled.
     * The code should be made cache-aware and use the Requests-Cache `CachedSession` sessions.
       This allows for more granular control over where in the code cache is (not) used.
 
