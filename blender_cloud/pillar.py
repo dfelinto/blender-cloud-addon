@@ -6,25 +6,17 @@ import logging
 from contextlib import closing
 
 import requests
-
-from . import cache
-
-# Add our shipped Pillar SDK wheel to the Python path
-if not any('pillar_sdk' in path for path in sys.path):
-    import glob
-
-    # TODO: gracefully handle errors when the wheel cannot be found.
-    my_dir = os.path.dirname(__file__)
-    pillar_wheel = glob.glob(os.path.join(my_dir, 'pillar_sdk*.whl'))[0]
-    sys.path.append(pillar_wheel)
-
 import pillarsdk
 import pillarsdk.exceptions
 import pillarsdk.utils
 
+from . import cache
+
 
 _pillar_api = None  # will become a pillarsdk.Api object.
 log = logging.getLogger(__name__)
+uncached_session = requests.session()
+_testing_blender_id_profile = None  # Just for testing, overrides what is returned by blender_id_profile.
 
 
 class UserNotLoggedInError(RuntimeError):
@@ -37,6 +29,10 @@ class UserNotLoggedInError(RuntimeError):
 def blender_id_profile() -> dict:
     """Returns the Blender ID profile of the currently logged in user."""
 
+    # Allow overriding before we import the bpy module.
+    if _testing_blender_id_profile is not None:
+        return _testing_blender_id_profile
+
     import bpy
 
     active_user_id = getattr(bpy.context.window_manager, 'blender_id_active_profile', None)
@@ -47,14 +43,16 @@ def blender_id_profile() -> dict:
     return blender_id.profiles.get_active_profile()
 
 
-def pillar_api() -> pillarsdk.Api:
+def pillar_api(pillar_endpoint: str=None) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
     The user must be logged in.
+
+    :param pillar_endpoint: URL of the Pillar server, for testing purposes. If not specified,
+        it will use the addon preferences.
     """
 
     global _pillar_api
-    import bpy
 
     # Only return the Pillar API object if the user is still logged in.
     profile = blender_id_profile()
@@ -62,9 +60,14 @@ def pillar_api() -> pillarsdk.Api:
         raise UserNotLoggedInError()
 
     if _pillar_api is None:
-        endpoint = bpy.context.user_preferences.addons['blender_cloud'].preferences.pillar_server
+        # Allow overriding the endpoint before importing Blender-specific stuff.
+        if pillar_endpoint is None:
+            from . import blender
+            pillar_endpoint = blender.preferences().pillar_server
+
         pillarsdk.Api.requests_session = cache.requests_session()
-        _pillar_api = pillarsdk.Api(endpoint=endpoint,
+
+        _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
                                     username=profile['username'],
                                     password=None,
                                     token=profile['token'])
@@ -143,7 +146,7 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
     # the download in between.
 
     def perform_get_request():
-        return requests.get(url, stream=True, verify=True)
+        return uncached_session.get(url, stream=True, verify=True)
 
     # Download the file in a different thread.
     def download_loop():
