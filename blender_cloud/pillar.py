@@ -145,15 +145,15 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
     # Separated doing the GET and downloading the body of the GET, so that we can cancel
     # the download in between.
 
-    def perform_get_request():
+    def perform_get_request() -> requests.Request:
         return uncached_session.get(url, stream=True, verify=True)
 
     # Download the file in a different thread.
     def download_loop():
         os.makedirs(os.path.dirname(filename), exist_ok=True)
 
-        with closing(req), open(filename, 'wb') as outfile:
-            for block in req.iter_content(chunk_size=chunk_size):
+        with closing(response), open(filename, 'wb') as outfile:
+            for block in response.iter_content(chunk_size=chunk_size):
                 if is_cancelled(future):
                     raise asyncio.CancelledError('Downloading was cancelled')
                 outfile.write(block)
@@ -164,8 +164,9 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
         raise asyncio.CancelledError('Downloading was cancelled')
 
     log.debug('Performing GET %s', url)
-    req = await loop.run_in_executor(None, perform_get_request)
-    log.debug('Done with GET %s', url)
+    response = await loop.run_in_executor(None, perform_get_request)
+    log.debug('Status %i from GET %s', response.status_code, url)
+    response.raise_for_status()
 
     # After we performed the GET request, we should check whether we should start
     # the download at all.
