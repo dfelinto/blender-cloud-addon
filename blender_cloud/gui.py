@@ -548,6 +548,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def handle_item_selection(self, context, item: MenuItem):
         """Called when the user clicks on a menu item that doesn't represent a folder."""
 
+        # FIXME: Download all files from the texture node, instead of just one.
+        # FIXME: Properly set up header store.
         self._state = 'DOWNLOADING_TEXTURE'
         url = item.file_desc.link
         local_path = os.path.join(context.scene.blender_cloud_dir, item.file_desc.filename)
@@ -558,7 +560,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
             self.log.info('Texture download complete, inspect %r.', local_path)
             self._state = 'QUIT'
 
-        self._new_async_task(pillar.download_to_file(url, local_path))
+        self._new_async_task(pillar.download_to_file(url, local_path, header_store='/dev/null'))
         self.async_task.add_done_callback(texture_download_completed)
 
 

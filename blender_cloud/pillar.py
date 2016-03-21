@@ -1,11 +1,12 @@
 import asyncio
-import sys
+import json
 import os
 import functools
 import logging
 from contextlib import closing
 
 import requests
+import requests.structures
 import pillarsdk
 import pillarsdk.exceptions
 import pillarsdk.utils
@@ -124,6 +125,7 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
     node_all = functools.partial(pillarsdk.Node.all, {
         'projection': {'name': 1, 'parent': 1, 'node_type': 1,
                        'properties.order': 1, 'properties.status': 1,
+                       'properties.files': 1,
                        'properties.content_type': 1, 'picture': 1},
         'where': where,
         'sort': 'properties.order',
@@ -135,10 +137,20 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
     return children['_items']
 
 
-async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyncio.Future = None):
+async def download_to_file(url, filename, *,
+                           header_store: str,
+                           chunk_size=100 * 1024,
+                           future: asyncio.Future = None):
     """Downloads a file via HTTP(S) directly to the filesystem."""
 
-    # TODO: use the file's ETag header to check whether we need to redownload the file at all.
+    stored_headers = {}
+    if os.path.exists(header_store):
+        log.debug('Loading cached headers %r', header_store)
+        try:
+            with open(header_store, 'r') as infile:
+                stored_headers = requests.structures.CaseInsensitiveDict(json.load(infile))
+        except Exception as ex:
+            log.warning('Unable to load headers from %r, ignoring cache: %s', header_store, str(ex))
 
     loop = asyncio.get_event_loop()
 
@@ -146,7 +158,19 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
     # the download in between.
 
     def perform_get_request() -> requests.Request:
-        return uncached_session.get(url, stream=True, verify=True)
+        headers = {}
+        try:
+            if stored_headers['Last-Modified']:
+                headers['If-Modified-Since'] = stored_headers['Last-Modified']
+        except KeyError:
+            pass
+        try:
+            if stored_headers['ETag']:
+                headers['If-None-Match'] = stored_headers['ETag']
+        except KeyError:
+            pass
+
+        return uncached_session.get(url, headers=headers, stream=True, verify=True)
 
     # Download the file in a different thread.
     def download_loop():
@@ -168,6 +192,10 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
     log.debug('Status %i from GET %s', response.status_code, url)
     response.raise_for_status()
 
+    if response.status_code == 304:
+        # The file we have cached is still good, just use that instead.
+        return
+
     # After we performed the GET request, we should check whether we should start
     # the download at all.
     if is_cancelled(future):
@@ -177,6 +205,14 @@ async def download_to_file(url, filename, chunk_size=100 * 1024, *, future: asyn
     log.debug('Downloading response of GET %s', url)
     await loop.run_in_executor(None, download_loop)
     log.debug('Done downloading response of GET %s', url)
+
+    # We're done downloading, now we have something cached we can use.
+    log.debug('Saving header cache to %s', header_store)
+    with open(header_store, 'w') as outfile:
+        json.dump({
+            'ETag': str(response.headers.get('etag', '')),
+            'Last-Modified': response.headers.get('Last-Modified'),
+        }, outfile, sort_keys=True)
 
 
 async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_size: str, *,
@@ -236,50 +272,6 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
         is aborted.
     """
 
-    api = pillar_api()
-    loop = asyncio.get_event_loop()
-
-    file_find = functools.partial(pillarsdk.File.find, params={
-        'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
-    }, api=api)
-
-    async def handle_texture_node(texture_node):
-        # Skip non-texture nodes, as we can't thumbnail them anyway.
-        if texture_node['node_type'] != 'texture':
-            return
-
-        if is_cancelled(future):
-            log.debug('fetch_texture_thumbs cancelled before finding File for texture %r',
-                      texture_node['_id'])
-            return
-
-        # Find the File that belongs to this texture node
-        pic_uuid = texture_node['picture']
-        loop.call_soon_threadsafe(thumbnail_loading, texture_node, texture_node)
-        file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
-
-        if file_desc is None:
-            log.warning('Unable to find file for texture node %s', pic_uuid)
-            thumb_path = None
-        else:
-            if is_cancelled(future):
-                log.debug('fetch_texture_thumbs cancelled before downloading file %r',
-                          file_desc['_id'])
-                return
-
-            # Get the thumbnail information from Pillar
-            thumb_url, thumb_path = await fetch_thumbnail_info(file_desc, thumbnail_directory, desired_size,
-                                                               future=future)
-            if thumb_path is None:
-                # The task got cancelled, we should abort too.
-                log.debug('fetch_texture_thumbs cancelled while downloading file %r',
-                          file_desc['_id'])
-                return
-
-            await download_to_file(thumb_url, thumb_path, future=future)
-
-        loop.call_soon_threadsafe(thumbnail_loaded, texture_node, file_desc, thumb_path)
-
     # Download all texture nodes in parallel.
     log.debug('Getting child nodes of node %r', parent_node_uuid)
     texture_nodes = await get_nodes(parent_node_uuid=parent_node_uuid,
@@ -298,7 +290,10 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
 
         log.debug('fetch_texture_thumbs: Gathering texture[%i:%i] for parent node %r',
                   i, i + chunk_size, parent_node_uuid)
-        coros = (handle_texture_node(texture_node)
+        coros = (download_texture_thumbnail(texture_node, desired_size,
+                                            thumbnail_directory,
+                                            thumbnail_loading=thumbnail_loading,
+                                            thumbnail_loaded=thumbnail_loaded)
                  for texture_node in chunk)
 
         # raises any exception from failed handle_texture_node() calls.
@@ -307,7 +302,59 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
     log.info('fetch_texture_thumbs: Done downloading texture thumbnails')
 
 
+async def download_texture_thumbnail(texture_node, desired_size: str,
+                                     thumbnail_directory: str,
+                                     *,
+                                     thumbnail_loading: callable,
+                                     thumbnail_loaded: callable,
+                                     future: asyncio.Future = None):
+    # Skip non-texture nodes, as we can't thumbnail them anyway.
+    if texture_node['node_type'] != 'texture':
+        return
+
+    if is_cancelled(future):
+        log.debug('fetch_texture_thumbs cancelled before finding File for texture %r',
+                  texture_node['_id'])
+        return
+
+    api = pillar_api()
+    loop = asyncio.get_event_loop()
+
+    file_find = functools.partial(pillarsdk.File.find, params={
+        'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
+    }, api=api)
+
+    # Find the File that belongs to this texture node
+    pic_uuid = texture_node['picture']
+    loop.call_soon_threadsafe(thumbnail_loading, texture_node, texture_node)
+    file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
+
+    if file_desc is None:
+        log.warning('Unable to find file for texture node %s', pic_uuid)
+        thumb_path = None
+    else:
+        if is_cancelled(future):
+            log.debug('fetch_texture_thumbs cancelled before downloading file %r',
+                      file_desc['_id'])
+            return
+
+        # Get the thumbnail information from Pillar
+        thumb_url, thumb_path = await fetch_thumbnail_info(file_desc, thumbnail_directory,
+                                                           desired_size, future=future)
+        if thumb_path is None:
+            # The task got cancelled, we should abort too.
+            log.debug('fetch_texture_thumbs cancelled while downloading file %r',
+                      file_desc['_id'])
+            return
+
+        # Cached headers are stored next to thumbnails in sidecar files.
+        header_store = '%s.headers' % thumb_path
+
+        await download_to_file(thumb_url, thumb_path, header_store=header_store, future=future)
+
+    loop.call_soon_threadsafe(thumbnail_loaded, texture_node, file_desc, thumb_path)
+
+
 def is_cancelled(future: asyncio.Future) -> bool:
     cancelled = future is not None and future.cancelled()
-    log.debug('%s.cancelled() = %s', future, cancelled)
     return cancelled
