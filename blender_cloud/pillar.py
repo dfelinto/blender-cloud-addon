@@ -149,17 +149,14 @@ async def download_to_file(url, filename, *,
         try:
             with open(header_store, 'r') as infile:
                 stored_headers = requests.structures.CaseInsensitiveDict(json.load(infile))
-            try:
-                expected_content_length = int(stored_headers['Content-Length'])
-                statinfo = os.stat(filename)
-                if expected_content_length != statinfo.st_size:
-                    log.debug('File size should be %i but is %i; ignoring cache.',
-                              expected_content_length, statinfo.st_size)
-                    stored_headers = {}
-            except (KeyError, ValueError):
-                pass
-            except IOError:
-                log.debug('IO error ')
+
+            # Check file length.
+            expected_content_length = int(stored_headers['Content-Length'])
+            statinfo = os.stat(filename)
+            if expected_content_length != statinfo.st_size:
+                log.debug('File size should be %i but is %i; ignoring cache.',
+                          expected_content_length, statinfo.st_size)
+                stored_headers = {}
         except Exception as ex:
             log.warning('Unable to load headers from %r, ignoring cache: %s', header_store, str(ex))
 
