@@ -144,11 +144,22 @@ async def download_to_file(url, filename, *,
     """Downloads a file via HTTP(S) directly to the filesystem."""
 
     stored_headers = {}
-    if os.path.exists(header_store):
+    if os.path.exists(filename) and os.path.exists(header_store):
         log.debug('Loading cached headers %r', header_store)
         try:
             with open(header_store, 'r') as infile:
                 stored_headers = requests.structures.CaseInsensitiveDict(json.load(infile))
+            try:
+                expected_content_length = int(stored_headers['Content-Length'])
+                statinfo = os.stat(filename)
+                if expected_content_length != statinfo.st_size:
+                    log.debug('File size should be %i but is %i; ignoring cache.',
+                              expected_content_length, statinfo.st_size)
+                    stored_headers = {}
+            except (KeyError, ValueError):
+                pass
+            except IOError:
+                log.debug('IO error ')
         except Exception as ex:
             log.warning('Unable to load headers from %r, ignoring cache: %s', header_store, str(ex))
 
@@ -212,6 +223,7 @@ async def download_to_file(url, filename, *,
         json.dump({
             'ETag': str(response.headers.get('etag', '')),
             'Last-Modified': response.headers.get('Last-Modified'),
+            'Content-Length': response.headers.get('Content-Length'),
         }, outfile, sort_keys=True)
 
 
