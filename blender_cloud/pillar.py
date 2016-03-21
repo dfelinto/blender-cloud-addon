@@ -311,22 +311,3 @@ def is_cancelled(future: asyncio.Future) -> bool:
     cancelled = future is not None and future.cancelled()
     log.debug('%s.cancelled() = %s', future, cancelled)
     return cancelled
-
-
-async def parent_node_uuid(node_uuid: str) -> str:
-    """Returns the UUID of the node's parent node, or an empty string if this is the top level."""
-
-    api = pillar_api()
-    loop = asyncio.get_event_loop()
-
-    log.debug('Finding parent node for node %r', node_uuid)
-    find_node = functools.partial(pillarsdk.Node.find, node_uuid,
-                                  {'projection': {'parent': 1}}, api=api)
-    node = await loop.run_in_executor(None, find_node)
-    if node is None:
-        log.debug('Unable to find node %r, returning empty parent', node_uuid)
-        return ''
-
-    parent_uuid = node.parent or ''
-    log.debug('Parent node of %r is %r', node_uuid, parent_uuid)
-    return parent_uuid
