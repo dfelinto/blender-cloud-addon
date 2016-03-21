@@ -47,12 +47,12 @@ if 'pillar' in locals():
     wheels.load_wheels()
 
     pillar = importlib.reload(pillar)
-    cache = importlib.reload(cache)
+    cache = importlib.reload(http_cache)
 else:
     from . import wheels
     wheels.load_wheels()
 
-    from . import pillar, cache
+    from . import pillar, http_cache
 
 
 def register():

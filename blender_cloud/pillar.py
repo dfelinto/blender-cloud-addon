@@ -10,7 +10,7 @@ import pillarsdk
 import pillarsdk.exceptions
 import pillarsdk.utils
 
-from . import cache
+from . import http_cache
 
 
 _pillar_api = None  # will become a pillarsdk.Api object.
@@ -65,7 +65,7 @@ def pillar_api(pillar_endpoint: str=None) -> pillarsdk.Api:
             from . import blender
             pillar_endpoint = blender.preferences().pillar_server
 
-        pillarsdk.Api.requests_session = cache.requests_session()
+        pillarsdk.Api.requests_session = http_cache.requests_session()
 
         _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
                                     username=profile['username'],

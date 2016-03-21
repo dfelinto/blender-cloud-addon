@@ -1,4 +1,10 @@
-"""Cache management."""
+"""HTTP Cache management.
+
+This module configures a cached session for the Requests package.
+It allows for filesystem-based caching of HTTP requests.
+
+Requires the 3rd party packages CacheControl and lockfile.
+"""
 
 import os
 import logging
@@ -44,4 +50,3 @@ def requests_session() -> requests.Session:
                                          cache=FileCache(cache_name))
 
     return _session
-
