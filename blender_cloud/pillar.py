@@ -12,7 +12,6 @@ import pillarsdk.utils
 
 from . import http_cache
 
-
 _pillar_api = None  # will become a pillarsdk.Api object.
 log = logging.getLogger(__name__)
 uncached_session = requests.session()
@@ -43,7 +42,7 @@ def blender_id_profile() -> dict:
     return blender_id.profiles.get_active_profile()
 
 
-def pillar_api(pillar_endpoint: str=None) -> pillarsdk.Api:
+def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
     The user must be logged in.
@@ -127,7 +126,8 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
                        'properties.order': 1, 'properties.status': 1,
                        'properties.content_type': 1, 'picture': 1},
         'where': where,
-        'sort': 'properties.order'}, api=pillar_api())
+        'sort': 'properties.order',
+        'embed': ['parent']}, api=pillar_api())
 
     loop = asyncio.get_event_loop()
     children = await loop.run_in_executor(None, node_all)
@@ -226,10 +226,10 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
     @param parent_node_uuid: the UUID of the parent node. All sub-nodes will be downloaded.
     @param desired_size: size indicator, from 'sbtmlh'.
     @param thumbnail_directory: directory in which to store the downloaded thumbnails.
-    @param thumbnail_loading: callback function that takes (node_id, pillarsdk.File object)
+    @param thumbnail_loading: callback function that takes (pillarsdk.Node, pillarsdk.File)
         parameters, which is called before a thumbnail will be downloaded. This allows you to
         show a "downloading" indicator.
-    @param thumbnail_loaded: callback function that takes (node_id, pillarsdk.File object,
+    @param thumbnail_loaded: callback function that takes (pillarsdk.Node, pillarsdk.File object,
         thumbnail path) parameters, which is called for every thumbnail after it's been downloaded.
     @param future: Future that's inspected; if it is not None and cancelled, texture downloading
         is aborted.
@@ -254,9 +254,7 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
 
         # Find the File that belongs to this texture node
         pic_uuid = texture_node['picture']
-        loop.call_soon_threadsafe(functools.partial(thumbnail_loading,
-                                                    texture_node['_id'],
-                                                    texture_node))
+        loop.call_soon_threadsafe(thumbnail_loading, texture_node, texture_node)
         file_desc = await loop.run_in_executor(None, file_find, pic_uuid)
 
         if file_desc is None:
@@ -279,9 +277,7 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
 
             await download_to_file(thumb_url, thumb_path, future=future)
 
-        loop.call_soon_threadsafe(functools.partial(thumbnail_loaded,
-                                                    texture_node['_id'],
-                                                    file_desc, thumb_path))
+        loop.call_soon_threadsafe(thumbnail_loaded, texture_node, file_desc, thumb_path)
 
     # Download all texture nodes in parallel.
     log.debug('Getting child nodes of node %r', parent_node_uuid)

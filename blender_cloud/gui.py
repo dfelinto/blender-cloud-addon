@@ -21,7 +21,6 @@
 import asyncio
 import logging
 import threading
-import traceback
 
 import bpy
 import bgl
@@ -33,6 +32,7 @@ from bpy.props import (BoolProperty, EnumProperty,
                        FloatProperty, FloatVectorProperty,
                        IntProperty, StringProperty)
 
+import pillarsdk
 from . import async_loop, pillar
 
 icon_width = 128
@@ -42,6 +42,13 @@ target_item_height = 128
 
 library_path = '/tmp'
 library_icons_path = os.path.join(os.path.dirname(__file__), "icons")
+
+
+class UpNode(pillarsdk.Node):
+    def __init__(self):
+        super().__init__()
+        self['_id'] = 'UP'
+        self['node_type'] = 'UP'
 
 
 class MenuItem:
@@ -59,17 +66,19 @@ class MenuItem:
         'SPINNER': os.path.join(library_icons_path, 'spinner.png'),
     }
 
-    def __init__(self, node_uuid: str, file_desc, thumb_path: str, label_text):
-        # TODO: change node_uuid to the actual pillarsdk.Node object.
-        # That way we can simply inspect node.node_type to distinguish between
-        # folders ('group_texture' type) and files ('texture' type).
+    SUPPORTED_NODE_TYPES = {'UP', 'group_texture', 'texture'}
 
-        self.node_uuid = node_uuid  # pillarsdk.Node UUID of a texture node
+    def __init__(self, node, file_desc, thumb_path: str, label_text):
+        if node['node_type'] not in self.SUPPORTED_NODE_TYPES:
+            raise TypeError('Node of type %r not supported; supported are %r.' % (
+                node.group_texture, self.SUPPORTED_NODE_TYPES))
+
+        self.node = node  # pillarsdk.Node, contains 'node_type' key to indicate type
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
         self.label_text = label_text
         self._thumb_path = ''
         self.icon = None
-        self._is_folder = file_desc is None and thumb_path == 'FOLDER'
+        self._is_folder = node['node_type'] == 'group_texture' or isinstance(node, UpNode)
 
         self.thumb_path = thumb_path
 
@@ -91,7 +100,15 @@ class MenuItem:
         else:
             self.icon = None
 
-    def update(self, file_desc, thumb_path: str, label_text):
+    @property
+    def node_uuid(self) -> str:
+        return self.node['_id']
+
+    def update(self, node, file_desc, thumb_path: str, label_text):
+        # We can get updated information about our Node, but a MenuItem should
+        # always represent one node, and it shouldn't be shared between nodes.
+        assert self.node_uuid == node['_id'], "Don't change the node ID this MenuItem reflects, just create a new one."
+        self.node = node
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
         self.thumb_path = thumb_path
         self.label_text = label_text
@@ -166,7 +183,13 @@ class BlenderCloudBrowser(bpy.types.Operator):
     _state = 'BROWSING'
 
     project_uuid = '5672beecc0261b2005ed1a33'  # Blender Cloud project UUID
-    node_uuid = ''  # Blender Cloud node UUID
+    node = None  # The Node object we're currently showing, or None if we're at the project top.
+    node_uuid = ''  # Blender Cloud node UUID we're currently showing, i.e. None-safe self.node['_id']
+
+    # This contains a stack of Node objects that lead up to the currently browsed node.
+    # This allows us to display the "up" item.
+    path_stack = []
+
     async_task = None  # asyncio task for fetching thumbnails
     signalling_future = None  # asyncio future for signalling that we want to cancel everything.
     timer = None
@@ -187,6 +210,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.thumbnails_cache = wm.thumbnails_cache
         self.project_uuid = wm.blender_cloud_project
         self.node_uuid = wm.blender_cloud_node
+        self.path_stack = []
 
         self.mouse_x = event.mouse_x
         self.mouse_y = event.mouse_y
@@ -237,8 +261,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
                 return {'FINISHED'}
 
             if selected.is_folder:
-                self.node_uuid = selected.node_uuid
-                self.browse_assets()
+                self.descend_node(selected.node)
             else:
                 if selected.file_desc is None:
                     # This can happen when the thumbnail information isn't loaded yet.
@@ -252,6 +275,27 @@ class BlenderCloudBrowser(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'RUNNING_MODAL'}
+
+    def descend_node(self, node):
+        """Descends the node hierarchy by visiting this node.
+
+        Also keeps track of the current node, so that we know where the "up" button should go.
+        """
+
+        # Going up or down?
+        if self.path_stack and isinstance(node, UpNode):
+            self.log.debug('Going up, pop the stack; pre-pop stack is %r', self.path_stack)
+            node = self.path_stack.pop()
+
+        else:
+            # Going down, keep track of where we were (project top-level is None)
+            self.path_stack.append(self.node)
+            self.log.debug('Going up, push the stack; post-push stack is %r', self.path_stack)
+
+        # Set 'current' to the given node
+        self.node_uuid = node['_id'] if node else None
+        self.node = node
+        self.browse_assets()
 
     def _stop_async_task(self):
         self.log.debug('Stopping async task')
@@ -317,12 +361,14 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         return menu_item
 
-    def update_menu_item(self, node_uuid, *args) -> MenuItem:
+    def update_menu_item(self, node, *args) -> MenuItem:
+        node_uuid = node['_id']
+
         # Just make this thread-safe to be on the safe side.
         with self._menu_item_lock:
             for menu_item in self.current_display_content:
                 if menu_item.node_uuid == node_uuid:
-                    menu_item.update(*args)
+                    menu_item.update(node, *args)
                     self.loaded_images.add(menu_item.icon.filepath_raw)
                     break
             else:
@@ -332,46 +378,49 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.log.info('Asynchronously downloading previews to %r', thumbnails_directory)
         self.clear_images()
 
-        def thumbnail_loading(node_uuid, texture_node):
-            self.add_menu_item(node_uuid, None, 'SPINNER', texture_node['name'])
+        def thumbnail_loading(node, texture_node):
+            self.add_menu_item(node, None, 'SPINNER', texture_node['name'])
 
-        def thumbnail_loaded(node_uuid, file_desc, thumb_path):
-            self.update_menu_item(node_uuid, file_desc, thumb_path, file_desc['filename'])
+        def thumbnail_loaded(node, file_desc, thumb_path):
+            self.update_menu_item(node, file_desc, thumb_path, file_desc['filename'])
 
+        # Download either by group_texture node UUID or by project UUID (which shows all top-level nodes)
         if self.node_uuid:
             self.log.debug('Getting subnodes for parent node %r', self.node_uuid)
             children = await pillar.get_nodes(parent_node_uuid=self.node_uuid,
                                               node_type='group_textures')
 
-            self.log.debug('Finding parent of node %r', self.node_uuid)
             # Make sure we can go up again.
-            parent_uuid = await pillar.parent_node_uuid(self.node_uuid)
-            self.add_menu_item(parent_uuid, None, 'FOLDER', '.. up ..')
-
-            self.log.debug('Iterating over child nodes of %r', self.node_uuid)
-            for child in children:
-                # print('  - %(_id)s = %(name)s' % child)
-                self.add_menu_item(child['_id'], None, 'FOLDER', child['name'])
-
-            directory = os.path.join(thumbnails_directory, self.project_uuid, self.node_uuid)
-            os.makedirs(directory, exist_ok=True)
-
-            self.log.debug('Fetching texture thumbnails for node %r', self.node_uuid)
-            await pillar.fetch_texture_thumbs(self.node_uuid, 's', directory,
-                                              thumbnail_loading=thumbnail_loading,
-                                              thumbnail_loaded=thumbnail_loaded,
-                                              future=self.signalling_future)
+            if self.path_stack:
+                self.add_menu_item(UpNode(), None, 'FOLDER', '.. up ..')
         elif self.project_uuid:
             self.log.debug('Getting subnodes for project node %r', self.project_uuid)
             children = await pillar.get_nodes(self.project_uuid, '')
 
-            self.log.debug('Iterating over child nodes of project %r', self.project_uuid)
-            for child in children:
-                # print('  - %(_id)s = %(name)s' % child)
-                self.add_menu_item(child['_id'], None, 'FOLDER', child['name'])
         else:
             # TODO: add "nothing here" icon and trigger re-draw
             self.log.warning("Not node UUID and no project UUID, I can't do anything!")
+            return
+
+        # Download all child nodes
+        self.log.debug('Iterating over child nodes of %r', self.node_uuid)
+        for child in children:
+            # print('  - %(_id)s = %(name)s' % child)
+            self.add_menu_item(child, None, 'FOLDER', child['name'])
+
+        # There are only sub-nodes at the project level, no texture nodes,
+        # so we won't have to bother looking for textures.
+        if not self.node_uuid:
+            return
+
+        directory = os.path.join(thumbnails_directory, self.project_uuid, self.node_uuid)
+        os.makedirs(directory, exist_ok=True)
+
+        self.log.debug('Fetching texture thumbnails for node %r', self.node_uuid)
+        await pillar.fetch_texture_thumbs(self.node_uuid, 's', directory,
+                                          thumbnail_loading=thumbnail_loading,
+                                          thumbnail_loaded=thumbnail_loaded,
+                                          future=self.signalling_future)
 
     def browse_assets(self):
         self._state = 'BROWSING'
