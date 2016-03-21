@@ -1,1 +1,5 @@
 *.pyc
+*.swp
+*.blend
+*.blend[1-9]
+blender_cloud/wheels/*.whl
