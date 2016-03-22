@@ -4,13 +4,13 @@ import os
 import functools
 import logging
 from contextlib import closing, contextmanager
-import pprint
 
 import requests
 import requests.structures
 import pillarsdk
 import pillarsdk.exceptions
 import pillarsdk.utils
+from pillarsdk.utils import sanitize_filename
 
 from . import http_cache
 
@@ -288,7 +288,7 @@ async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_siz
                          .format(file['_id'], desired_size))
 
     root, ext = os.path.splitext(file['file_path'])
-    thumb_fname = "{0}-{1}.jpg".format(root, desired_size)
+    thumb_fname = sanitize_filename('{0}-{1}.jpg'.format(root, desired_size))
     thumb_path = os.path.abspath(os.path.join(directory, thumb_fname))
 
     return thumb_link, thumb_path
@@ -422,13 +422,14 @@ async def download_file_by_uuid(file_uuid,
     metadata_file = os.path.join(metadata_directory, 'files', '%s.json' % file_uuid)
     save_as_json(file_desc, metadata_file)
 
-    file_path = os.path.join(target_directory, file_desc['filename'])
+    file_path = os.path.join(target_directory, sanitize_filename(file_desc['filename']))
     file_url = file_desc['link']
     # log.debug('Texture %r:\n%s', file_uuid, pprint.pformat(file_desc.to_dict()))
     loop.call_soon_threadsafe(file_loading, file_path, file_desc)
 
     # Cached headers are stored in the project space
-    header_store = os.path.join(metadata_directory, 'files', '%s.headers' % file_uuid)
+    header_store = os.path.join(metadata_directory, 'files',
+                                sanitize_filename('%s.headers' % file_uuid))
 
     await download_to_file(file_url, file_path, header_store=header_store, future=future)
 
