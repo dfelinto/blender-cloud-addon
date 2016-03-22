@@ -331,6 +331,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def _finish(self, context):
         self.log.debug('Finishing the modal operator')
         self._stop_async_task()
+        self.clear_images()
+
         context.space_data.draw_handler_remove(self._draw_handle, 'WINDOW')
         context.window_manager.event_timer_remove(self.timer)
 
