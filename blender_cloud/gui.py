@@ -107,7 +107,9 @@ class MenuItem:
     def update(self, node, file_desc, thumb_path: str, label_text):
         # We can get updated information about our Node, but a MenuItem should
         # always represent one node, and it shouldn't be shared between nodes.
-        assert self.node_uuid == node['_id'], "Don't change the node ID this MenuItem reflects, just create a new one."
+        if self.node_uuid != node['_id']:
+            raise ValueError("Don't change the node ID this MenuItem reflects, "
+                             "just create a new one.")
         self.node = node
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
         self.thumb_path = thumb_path
@@ -427,14 +429,14 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.log.debug('Browsing assets at project %r node %r', self.project_uuid, self.node_uuid)
         self._new_async_task(self.async_download_previews(self.thumbnails_cache))
 
-    def _new_async_task(self, async_task: asyncio.coroutine):
+    def _new_async_task(self, async_task: asyncio.coroutine, future: asyncio.Future=None):
         """Stops the currently running async task, and starts another one."""
 
         self.log.debug('Setting up a new task %r, so any existing task must be stopped', async_task)
         self._stop_async_task()
 
         # Download the previews asynchronously.
-        self.signalling_future = asyncio.Future()
+        self.signalling_future = future or asyncio.Future()
         self.async_task = asyncio.ensure_future(async_task)
         self.log.debug('Created new task %r', self.async_task)
 
@@ -548,19 +550,39 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def handle_item_selection(self, context, item: MenuItem):
         """Called when the user clicks on a menu item that doesn't represent a folder."""
 
-        # FIXME: Download all files from the texture node, instead of just one.
-        # FIXME: Properly set up header store.
+        self.clear_images()
         self._state = 'DOWNLOADING_TEXTURE'
-        url = item.file_desc.link
-        local_path = os.path.join(context.scene.blender_cloud_dir, item.file_desc.filename)
-        local_path = bpy.path.abspath(local_path)
-        self.log.info('Downloading %s to %s', url, local_path)
+
+        node_path_components = [node['name'] for node in self.path_stack if node is not None]
+        local_path_components = [self.project_uuid] + node_path_components + [self.node['name']]
+
+        top_texture_directory = bpy.path.abspath(context.scene.blender_cloud_dir)
+        local_path = os.path.join(top_texture_directory, *local_path_components)
+        meta_path = os.path.join(top_texture_directory, '.blender_cloud')
+
+        self.log.info('Downloading texture %r to %s', item.node_uuid, local_path)
+        self.log.debug('Metadata will be stored at %s', meta_path)
+
+        file_paths = []
+
+        def texture_downloading(file_path, file_desc, *args):
+            self.log.info('Texture downloading to %s', file_path)
+
+        def texture_downloaded(file_path, file_desc, *args):
+            self.log.info('Texture downloaded to %r.', file_path)
+            bpy.data.images.load(filepath=file_path)
+            file_paths.append(file_path)
 
         def texture_download_completed(_):
-            self.log.info('Texture download complete, inspect %r.', local_path)
+            self.log.info('Texture download complete, inspect:\n%s', '\n'.join(file_paths))
             self._state = 'QUIT'
 
-        self._new_async_task(pillar.download_to_file(url, local_path, header_store='/dev/null'))
+        signalling_future = asyncio.Future()
+        self._new_async_task(pillar.download_texture(item.node, local_path,
+                                                     metadata_directory=meta_path,
+                                                     texture_loading=texture_downloading,
+                                                     texture_loaded=texture_downloaded,
+                                                     future=signalling_future))
         self.async_task.add_done_callback(texture_download_completed)
 
 

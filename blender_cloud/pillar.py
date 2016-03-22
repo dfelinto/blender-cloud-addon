@@ -3,7 +3,8 @@ import json
 import os
 import functools
 import logging
-from contextlib import closing
+from contextlib import closing, contextmanager
+import pprint
 
 import requests
 import requests.structures
@@ -19,11 +20,39 @@ uncached_session = requests.session()
 _testing_blender_id_profile = None  # Just for testing, overrides what is returned by blender_id_profile.
 _downloaded_urls = set()  # URLs we've downloaded this Blender session.
 
+
 class UserNotLoggedInError(RuntimeError):
     """Raised when the user should be logged in on Blender ID, but isn't.
 
     This is basically for every interaction with Pillar.
     """
+
+
+class PillarError(RuntimeError):
+    """Raised when there is some issue with the communication with Pillar.
+
+    This is only raised for logical errors (for example nodes that should
+    exist but still can't be found). HTTP communication errors are signalled
+    with other exceptions.
+    """
+
+
+@contextmanager
+def with_existing_dir(filename: str, open_mode: str, encoding=None):
+    """Opens a file, ensuring its directory exists."""
+
+    directory = os.path.dirname(filename)
+    if not os.path.exists(directory):
+        log.debug('Creating directory %s', directory)
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+    with open(filename, open_mode, encoding=encoding) as file_object:
+        yield file_object
+
+
+def save_as_json(pillar_resource, json_filename):
+    with with_existing_dir(json_filename, 'w') as outfile:
+        log.debug('Saving metadata to %r' % json_filename)
+        json.dump(pillar_resource, outfile, sort_keys=True, cls=pillarsdk.utils.PillarJSONEncoder)
 
 
 def blender_id_profile() -> dict:
@@ -188,17 +217,17 @@ async def download_to_file(url, filename, *,
         if is_cancelled(future):
             log.debug('Downloading was cancelled before doing the GET.')
             raise asyncio.CancelledError('Downloading was cancelled')
+        log.debug('Performing GET request, waiting for response.')
         return uncached_session.get(url, headers=headers, stream=True, verify=True)
 
     # Download the file in a different thread.
     def download_loop():
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-
-        with closing(response), open(filename, 'wb') as outfile:
-            for block in response.iter_content(chunk_size=chunk_size):
-                if is_cancelled(future):
-                    raise asyncio.CancelledError('Downloading was cancelled')
-                outfile.write(block)
+        with with_existing_dir(filename, 'wb') as outfile:
+            with closing(response):
+                for block in response.iter_content(chunk_size=chunk_size):
+                    if is_cancelled(future):
+                        raise asyncio.CancelledError('Downloading was cancelled')
+                    outfile.write(block)
 
     # Check for cancellation even before we start our GET request
     if is_cancelled(future):
@@ -228,7 +257,8 @@ async def download_to_file(url, filename, *,
     # We're done downloading, now we have something cached we can use.
     log.debug('Saving header cache to %s', header_store)
     _downloaded_urls.add(url)
-    with open(header_store, 'w') as outfile:
+
+    with with_existing_dir(header_store, 'w') as outfile:
         json.dump({
             'ETag': str(response.headers.get('etag', '')),
             'Last-Modified': response.headers.get('Last-Modified'),
@@ -368,6 +398,66 @@ async def download_texture_thumbnail(texture_node, desired_size: str,
     loop.call_soon_threadsafe(thumbnail_loaded, texture_node, file_desc, thumb_path)
 
 
+async def download_file_by_uuid(file_uuid,
+                                target_directory: str,
+                                metadata_directory: str,
+                                *,
+                                file_loading: callable,
+                                file_loaded: callable,
+                                future: asyncio.Future):
+    if is_cancelled(future):
+        log.debug('download_file_by_uuid(%r) cancelled.', file_uuid)
+        return
+
+    loop = asyncio.get_event_loop()
+
+    # Find the File document.
+    api = pillar_api()
+    file_find = functools.partial(pillarsdk.File.find, params={
+        'projection': {'link': 1, 'filename': 1},
+    }, api=api)
+    file_desc = await loop.run_in_executor(None, file_find, file_uuid)
+
+    # Save the file document to disk
+    metadata_file = os.path.join(metadata_directory, 'files', '%s.json' % file_uuid)
+    save_as_json(file_desc, metadata_file)
+
+    file_path = os.path.join(target_directory, file_desc['filename'])
+    file_url = file_desc['link']
+    # log.debug('Texture %r:\n%s', file_uuid, pprint.pformat(file_desc.to_dict()))
+    loop.call_soon_threadsafe(file_loading, file_path, file_desc)
+
+    # Cached headers are stored in the project space
+    header_store = os.path.join(metadata_directory, 'files', '%s.headers' % file_uuid)
+
+    await download_to_file(file_url, file_path, header_store=header_store, future=future)
+
+    loop.call_soon_threadsafe(file_loaded, file_path, file_desc)
+
+
+async def download_texture(texture_node,
+                           target_directory: str,
+                           metadata_directory: str,
+                           *,
+                           texture_loading: callable,
+                           texture_loaded: callable,
+                           future: asyncio.Future):
+    if texture_node['node_type'] != 'texture':
+        raise TypeError("Node type should be 'texture', not %r" % texture_node['node_type'])
+
+    # Download every file. Eve doesn't support embedding from a list-of-dicts.
+    downloaders = (download_file_by_uuid(file_info['file'],
+                                         target_directory,
+                                         metadata_directory,
+                                         file_loading=texture_loading,
+                                         file_loaded=texture_loaded,
+                                         future=future)
+                   for file_info in texture_node['properties']['files'])
+
+    return await asyncio.gather(*downloaders)
+
+
 def is_cancelled(future: asyncio.Future) -> bool:
+    # assert future is not None  # for debugging purposes.
     cancelled = future is not None and future.cancelled()
     return cancelled
