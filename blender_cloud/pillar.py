@@ -17,7 +17,7 @@ _pillar_api = None  # will become a pillarsdk.Api object.
 log = logging.getLogger(__name__)
 uncached_session = requests.session()
 _testing_blender_id_profile = None  # Just for testing, overrides what is returned by blender_id_profile.
-
+_downloaded_urls = set()  # URLs we've downloaded this Blender session.
 
 class UserNotLoggedInError(RuntimeError):
     """Raised when the user should be logged in on Blender ID, but isn't.
@@ -153,7 +153,14 @@ async def download_to_file(url, filename, *,
             # Check file length.
             expected_content_length = int(stored_headers['Content-Length'])
             statinfo = os.stat(filename)
-            if expected_content_length != statinfo.st_size:
+            if expected_content_length == statinfo.st_size:
+                # File exists, and is of the correct length. Don't bother downloading again
+                # if we already downloaded it this session.
+                if url in _downloaded_urls:
+                    log.debug('Already downloaded %s this session, skipping this request.',
+                              url)
+                    return
+            else:
                 log.debug('File size should be %i but is %i; ignoring cache.',
                           expected_content_length, statinfo.st_size)
                 stored_headers = {}
@@ -202,6 +209,7 @@ async def download_to_file(url, filename, *,
 
     if response.status_code == 304:
         # The file we have cached is still good, just use that instead.
+        _downloaded_urls.add(url)
         return
 
     # After we performed the GET request, we should check whether we should start
@@ -216,6 +224,7 @@ async def download_to_file(url, filename, *,
 
     # We're done downloading, now we have something cached we can use.
     log.debug('Saving header cache to %s', header_store)
+    _downloaded_urls.add(url)
     with open(header_store, 'w') as outfile:
         json.dump({
             'ETag': str(response.headers.get('etag', '')),
