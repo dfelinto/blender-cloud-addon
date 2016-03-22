@@ -18,7 +18,7 @@ def setup_asyncio_executor():
     reliably cancel them.
     """
 
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    executor = concurrent.futures.ThreadPoolExecutor()
     loop = asyncio.get_event_loop()
     loop.set_default_executor(executor)
     # loop.set_debug(True)
