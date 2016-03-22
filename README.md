@@ -7,6 +7,94 @@ the Python PATH, or be stored as a [wheel file](http://pythonwheels.com/)
 at `blender_cloud/wheels/pillar_sdk-*.whl`.
 
 
+Design
+------
+
+The addon code is designed around Python's [asyncio](https://docs.python.org/3/library/asyncio.html)
+module. This allows us to perform HTTP calls (and other longer-lasting
+operations) without blocking Blender's user interface.
+
+### Motivation for asyncio
+
+These are the motivations to choose asyncio in favour of alternatives:
+
+1. Bundled with Python and supported by new syntax, most notably the
+   `await` and `async def` statements.
+2. Allows for clear "handover points", where one task can be suspended
+   and another can be run in its place. This provides for a much more
+   deterministic execution flow than possible with multi-threading.
+3. Support for calling callbacks in the same thread that runs the event
+   loop. This allows for elegant parallel execution of tasks in different
+   threads, while keeping the interface with Blender single-threaded.
+4. Support for wrapping non-asyncio, blocking functionality (that is,
+   the asynchronous world supports the synchronous world).
+5. Support for calling `async def` methods in a synchronous way (that is,
+   the synchronous world supports the asynchronous world).
+6. No tight integration with Blender, making it possible to test
+   asynchronous Python modules without running Blender.
+
+### The asyncio event loop
+
+The [event loop](https://docs.python.org/3/library/asyncio-eventloop.html)
+is the central execution device provided by asyncio. By design it blocks
+the thread, either forever or until a given task is finished. It is
+intended to run on the main thread; running on a background
+thread would break motivation 3 described above. For integration with
+Blender this default behaviour is unwanted, which is solved in the
+`blender_cloud.async_loop` module as follows:
+
+1. `ensure_async_loop()` installs `kick_async_loop()` as a
+   `scene_update_pre` handler. This ensures that the
+   `kick_async_loop()` function is called on a regular basis from
+   Blender. It also makes sure the function is registered only once.
+2. `kick_async_loop()` performs a single iteration of the event loop.
+   It monitors the task scheduler to determine whether all scheduled
+   tasks are done; if that is the case, it calls `stop_async_loop()`.
+   As only a single iteration is performed, this only blocks for a very
+   short time -- sockets and file descriptors are inspected to see
+   whether a reading task can continue without blocking.
+3. `stop_async_loop()` removes the `scene_update_pre` handler. This is
+   done by name, instead of object identify, such that it survives a
+   reload of the addon code between installation and removal of the
+   handler.
+
+
+### Recommended workflow
+
+To start an asynchronous task and be notified when it is done, use the
+following. This uses the Blender-specific `async_loop` module.
+
+
+```python
+import asyncio
+from blender_cloud import async_loop
+
+async def some_async_func():
+    return 1 + 1
+
+def done_callback(task):
+    print('Task result: ', task.result())
+
+async_task = asyncio.ensure_future(some_async_func())
+async_task.add_done_callback(done_callback)
+async_loop.ensure_async_loop()
+```
+
+To start an asynchronous task and block until it is done, use the
+following.
+
+```python
+import asyncio
+
+async def some_async_func():
+    return 1 + 1
+
+loop = asyncio.get_event_loop()
+res = loop.run_until_complete(some_async_func())
+print('Task result:', res)
+```
+
+
 Communication & File Structure
 ------------------------------
 
