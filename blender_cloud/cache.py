@@ -18,18 +18,30 @@ log = logging.getLogger(__name__)
 _session = None  # requests.Session object that's set up for caching by requests_session().
 
 
-def cache_directory() -> str:
+def cache_directory(*subdirs) -> str:
     """Returns an OS-specifc cache location, and ensures it exists.
 
     Should be replaced with a call to bpy.utils.user_resource('CACHE', ...)
     once https://developer.blender.org/T47684 is finished.
+
+    :param subdirs: extra subdirectories inside the cache directory.
+
+    >>> cache_directory()
+    '.../blender_cloud/your_username'
+    >>> cache_directory('sub1', 'sub2')
+    '.../blender_cloud/your_username/sub1/sub2'
     """
 
-    # TODO: just use bpy.utils.user_resource('CACHE', ...)
+    from . import pillar
 
-    cache_dir = os.path.join(appdirs.user_cache_dir(appname='Blender', appauthor=False), 'blender_cloud')
+    profile = pillar.blender_id_profile() or {'username': 'anonymous'}
 
-    os.makedirs(cache_dir, exist_ok=True)
+    # TODO: use bpy.utils.user_resource('CACHE', ...)
+    # once https://developer.blender.org/T47684 is finished.
+    user_cache_dir = appdirs.user_cache_dir(appname='Blender', appauthor=False)
+    cache_dir = os.path.join(user_cache_dir, 'blender_cloud', profile['username'], *subdirs)
+
+    os.makedirs(cache_dir, mode=0o700, exist_ok=True)
 
     return cache_dir
 
@@ -42,8 +54,7 @@ def requests_session() -> requests.Session:
     if _session is not None:
         return _session
 
-    cache_dir = cache_directory()
-    cache_name = os.path.join(cache_dir, 'blender_cloud_http')
+    cache_name = cache_directory('blender_cloud_http')
     log.info('Storing cache in %s' % cache_name)
 
     _session = cachecontrol.CacheControl(sess=requests.session(),

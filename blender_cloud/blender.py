@@ -9,7 +9,7 @@ import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene
 from bpy.props import StringProperty
 
-from . import pillar, gui, http_cache
+from . import pillar, gui
 
 ADDON_NAME = 'blender_cloud'
 
@@ -102,11 +102,6 @@ def preferences() -> BlenderCloudPreferences:
 def register():
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
-
-    WindowManager.thumbnails_cache = StringProperty(
-        name="Thumbnails cache",
-        subtype='DIR_PATH',
-        default=os.path.join(http_cache.cache_directory(), 'thumbnails'))
 
     WindowManager.blender_cloud_project = StringProperty(
         name="Blender Cloud project UUID",

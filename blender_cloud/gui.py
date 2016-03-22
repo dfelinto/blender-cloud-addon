@@ -33,7 +33,7 @@ from bpy.props import (BoolProperty, EnumProperty,
                        IntProperty, StringProperty)
 
 import pillarsdk
-from . import async_loop, pillar
+from . import async_loop, pillar, cache
 
 icon_width = 128
 icon_height = 128
@@ -209,11 +209,11 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
     def invoke(self, context, event):
         wm = context.window_manager
-        self.thumbnails_cache = wm.thumbnails_cache
         self.project_uuid = wm.blender_cloud_project
         self.node_uuid = wm.blender_cloud_node
         self.path_stack = []
 
+        self.thumbnails_cache = cache.cache_directory('thumbnails')
         self.mouse_x = event.mouse_x
         self.mouse_y = event.mouse_y
 

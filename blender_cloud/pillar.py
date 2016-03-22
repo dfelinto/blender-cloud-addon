@@ -12,7 +12,7 @@ import pillarsdk.exceptions
 import pillarsdk.utils
 from pillarsdk.utils import sanitize_filename
 
-from . import http_cache
+from . import cache
 
 _pillar_api = None  # will become a pillarsdk.Api object.
 log = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
             from . import blender
             pillar_endpoint = blender.preferences().pillar_server
 
-        pillarsdk.Api.requests_session = http_cache.requests_session()
+        pillarsdk.Api.requests_session = cache.requests_session()
 
         _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
                                     username=profile['username'],
