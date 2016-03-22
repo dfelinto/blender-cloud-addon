@@ -27,20 +27,28 @@ def setup_asyncio_executor():
 def kick_async_loop(*args):
     loop = asyncio.get_event_loop()
 
+    # We always need to do one more 'kick' to handle task-done callbacks.
+    stop_after_this_kick = False
+
     if loop.is_closed():
-        log.warning('loop closed, stopping')
+        log.warning('loop closed, stopping immediately.')
         stop_async_loop()
         return
 
     all_tasks = asyncio.Task.all_tasks()
     if not len(all_tasks):
-        log.debug('no more scheduled tasks, stopping')
-        stop_async_loop()
-        return
+        log.debug('no more scheduled tasks, stopping after this kick.')
+        stop_after_this_kick = True
 
-    if all(task.done() for task in all_tasks):
-        log.info('all %i tasks are done, fetching results and stopping.', len(all_tasks))
+    elif all(task.done() for task in all_tasks):
+        log.debug('all %i tasks are done, fetching results and stopping after this kick.',
+                  len(all_tasks))
+        stop_after_this_kick = True
+
         for task_idx, task in enumerate(all_tasks):
+            if not task.done():
+                continue
+
             # noinspection PyBroadException
             try:
                 res = task.result()
@@ -51,16 +59,12 @@ def kick_async_loop(*args):
             except Exception:
                 print('{}: resulted in exception'.format(task))
                 traceback.print_exc()
+
+    loop.stop()
+    loop.run_forever()
+
+    if stop_after_this_kick:
         stop_async_loop()
-        return
-
-    # Perform a single async loop step
-    def stop_loop(future):
-        future.set_result('done')
-
-    future = asyncio.Future()
-    loop.call_later(0.005, stop_loop, future)
-    loop.run_until_complete(future)
 
 
 def async_loop_handler() -> callable:
