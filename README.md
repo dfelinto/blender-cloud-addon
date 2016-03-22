@@ -58,8 +58,8 @@ Caching is performed at different levels:
 
 In the future we might add:
 
-    * `projects/{project_uuid}.json` containing the project document from Pillar
-    * `nodes/{node_uuid}.json` containing the node document from Pillar
-    * `index.sqlite` containing a mapping from `{project_name}/{node_name}/{node_name}/...`
-      to the UUID of the last-named path component (project, node, or file). This allows us
-      to map the path of a filesystem path to its Pillar document.
+* `projects/{project_uuid}.json` containing the project document from Pillar
+* `nodes/{node_uuid}.json` containing the node document from Pillar
+* `index.sqlite` containing a mapping from `{project_name}/{node_name}/{node_name}/...`
+  to the UUID of the last-named path component (project, node, or file). This allows us
+  to map the path of a filesystem path to its Pillar document.
