@@ -572,7 +572,9 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         def texture_downloaded(file_path, file_desc, *args):
             self.log.info('Texture downloaded to %r.', file_path)
-            bpy.data.images.load(filepath=file_path)
+            image_dblock = bpy.data.images.load(filepath=file_path)
+            image_dblock['bcloud_file_uuid'] = file_desc['_id']
+            image_dblock['bcloud_texture_node_uuid'] = item.node_uuid
             file_paths.append(file_path)
 
         def texture_download_completed(_):
