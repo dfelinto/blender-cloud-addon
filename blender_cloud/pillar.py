@@ -185,6 +185,9 @@ async def download_to_file(url, filename, *,
         except KeyError:
             pass
 
+        if is_cancelled(future):
+            log.debug('Downloading was cancelled before doing the GET.')
+            raise asyncio.CancelledError('Downloading was cancelled')
         return uncached_session.get(url, headers=headers, stream=True, verify=True)
 
     # Download the file in a different thread.
@@ -302,7 +305,8 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
         coros = (download_texture_thumbnail(texture_node, desired_size,
                                             thumbnail_directory,
                                             thumbnail_loading=thumbnail_loading,
-                                            thumbnail_loaded=thumbnail_loaded)
+                                            thumbnail_loaded=thumbnail_loaded,
+                                            future=future)
                  for texture_node in chunk)
 
         # raises any exception from failed handle_texture_node() calls.
