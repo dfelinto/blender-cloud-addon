@@ -29,18 +29,21 @@ Caching is performed at different levels:
 
 * Caching of HTTP GET requests is performed by [CacheControl](https://cachecontrol.readthedocs.org/).
   
-    * Cache is stored in `$CACHE/blender_cloud_http/`; by using the file
+    * Cache is stored in `$CACHE/{username}/blender_cloud_http/`; by using the file
       backend, we ensure cache persistence across Blender runs. This
       does require the `lockfile` package to be installed or bundled.
-    * The code should be made cache-aware and use the Requests-Cache `CachedSession` sessions.
+    * The code is cache-aware and uses the CacheControl-managed session object.
       This allows for more granular control over where in the code cache is (not) used.
+    * Uncached HTTP requests user another session object to allow
+      connection pooling.
 
 * Downloaded thumbnails are cached (by us) in `$CACHE/thumbnails/{node_uuid}/{filename}`.
 
-    * Use a non-cached HTTP GET to download these (using [session.cache_disabled()](http://requests-cache.readthedocs.org/en/stable/api.html#requests_cache.core.CachedSession.cache_disabled)).
-    * HTTP headers are stored as JSON key/value pairs in `$CACHE/thumbnails/{node_uuid}/{filename}.headers`.
+    * Use a non-cached HTTP GET to download these.
+    * A subset of HTTP headers are stored as JSON key/value pairs in `$CACHE/thumbnails/{node_uuid}/{filename}.headers`.
     * Use the ETag and If-Modified-Since headers to prevent unnecessary re-downloading.
     * Check Content-Length header against actual file size to detect partially-downloaded files that need re-downloading.
+    * A file download is only attempted once per Blender session.
     
 * Downloaded files (such as textures) are handled in the same way as thumbnails (described above),
   but have their metadata stored somewhere else (described below).
