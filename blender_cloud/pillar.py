@@ -233,8 +233,7 @@ async def download_to_file(url, filename, *,
         }, outfile, sort_keys=True)
 
 
-async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_size: str, *,
-                               future: asyncio.Future = None):
+async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_size: str):
     """Fetches thumbnail information from Pillar.
 
     @param file: the pillar File object that represents the image whose thumbnail to download.
@@ -247,10 +246,6 @@ async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_siz
 
     api = pillar_api()
 
-    if is_cancelled(future):
-        log.debug('stream_thumb_to_file(): cancelled before fetching thumbnail URL from Pillar')
-        return None, None
-
     loop = asyncio.get_event_loop()
     thumb_link = await loop.run_in_executor(None, functools.partial(
         file.thumbnail_file, desired_size, api=api))
@@ -258,10 +253,6 @@ async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_siz
     if thumb_link is None:
         raise ValueError("File {} has no thumbnail of size {}"
                          .format(file['_id'], desired_size))
-
-    if is_cancelled(future):
-        log.debug('stream_thumb_to_file(): cancelled before downloading file')
-        return None, None
 
     root, ext = os.path.splitext(file['file_path'])
     thumb_fname = "{0}-{1}.jpg".format(root, desired_size)
@@ -358,7 +349,7 @@ async def download_texture_thumbnail(texture_node, desired_size: str,
 
         # Get the thumbnail information from Pillar
         thumb_url, thumb_path = await fetch_thumbnail_info(file_desc, thumbnail_directory,
-                                                           desired_size, future=future)
+                                                           desired_size)
         if thumb_path is None:
             # The task got cancelled, we should abort too.
             log.debug('fetch_texture_thumbs cancelled while downloading file %r',
