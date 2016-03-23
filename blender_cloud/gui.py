@@ -266,9 +266,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
             selected = self.get_clicked()
 
             if selected is None:
-                self.log.info('Click did not hit any menu item, closing.')
-                self._finish(context)
-                return {'FINISHED'}
+                # No item clicked, ignore it.
+                return {'RUNNING_MODAL'}
 
             if selected.is_folder:
                 self.descend_node(selected.node)
