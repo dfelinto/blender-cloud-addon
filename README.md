@@ -39,6 +39,20 @@ these:
   You can use the same file from your local requests installation, or
   use `/etc/ssl/certs/ca-certificates.crt`.
 
+As a final step, install and log in with the
+[Blender ID addon](https://github.com/fsiddi/blender-id-addon).
+
+Running the addon
+-----------------
+
+After installing the Blender Cloud addon, log in with the Blender ID
+(in the addon preferences). Then activate the Blender Cloud addon,
+and press Ctrl+Alt+Shift+A to activate it (yes, this needs work).
+Downloaded textures are loaded into image datablocks.
+The download location can be configured using the
+`bpy.context.scene.blender_cloud_dir` property (no GUI yet).
+
+
 Design
 ------
 
