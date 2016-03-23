@@ -24,6 +24,16 @@ and [lockfile](https://pypi.python.org/pypi/lockfile) to be placed in
 `blender_cloud/wheels`, or installed somewhere where Blender can find
 them.
 
+The addon requires HTTPS connections, and thus is dependent on
+[D1845](https://developer.blender.org/D1845). You can do either of
+these:
+
+* Build Blender yourself
+* Get a recent copy from the buildbot
+* Copy certificate authority certificate PEM file to
+  `blender/2.77/python/lib/python3.5/site-packages/requests/cacert.pem`.
+  You can use the same file from your local requests installation, or
+  use `/etc/ssl/certs/ca-certificates.crt`.
 
 Design
 ------
@@ -61,20 +71,14 @@ thread would break motivation 3 described above. For integration with
 Blender this default behaviour is unwanted, which is solved in the
 `blender_cloud.async_loop` module as follows:
 
-1. `ensure_async_loop()` installs `kick_async_loop()` as a
-   `scene_update_pre` handler. This ensures that the
-   `kick_async_loop()` function is called on a regular basis from
-   Blender. It also makes sure the function is registered only once.
-2. `kick_async_loop()` performs a single iteration of the event loop.
-   It monitors the task scheduler to determine whether all scheduled
-   tasks are done; if that is the case, it calls `stop_async_loop()`.
-   As only a single iteration is performed, this only blocks for a very
-   short time -- sockets and file descriptors are inspected to see
-   whether a reading task can continue without blocking.
-3. `stop_async_loop()` removes the `scene_update_pre` handler. This is
-   done by name, instead of object identify, such that it survives a
-   reload of the addon code between installation and removal of the
-   handler.
+1. `ensure_async_loop()` starts `AsyncLoopModalOperator`.
+2. `AsyncLoopModalOperator` registers a timer, and performs a single
+   iteration of the event loop on each timer tick.
+   As only a single iteration is performed per timer tick, this only
+   blocks for a very short time -- sockets and file descriptors are
+   inspected to see whether a reading task can continue without
+   blocking.
+3. The modal operator stops automatically when all tasks are done.
 
 
 ### Recommended workflow
