@@ -24,6 +24,10 @@ and [lockfile](https://pypi.python.org/pypi/lockfile) to be placed in
 `blender_cloud/wheels`, or installed somewhere where Blender can find
 them.
 
+The above requirements can be downloaded and built automatically
+by running the `build-dependency-wheels.sh` script. Only tested on
+Ubuntu Linux 14.04.
+
 The addon requires HTTPS connections, and thus is dependent on
 [D1845](https://developer.blender.org/D1845). You can do either of
 these:
