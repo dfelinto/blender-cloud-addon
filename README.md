@@ -11,6 +11,15 @@ This addon is a *proof of concept* demonstrating the following features:
   module to provide asynchronous execution of Python code in Blender.
 
 
+### Browsing texture folders
+
+![Browsing texture folders](screenshot_folders.png)
+
+### Browsing textures
+
+![Browsing textures](screenshot_textures.png)
+
+
 Installation
 ------------
 
