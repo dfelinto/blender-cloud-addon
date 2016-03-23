@@ -237,6 +237,14 @@ class BlenderCloudBrowser(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        task = self.async_task
+        if self._state != 'EXCEPTION' and task.done() and not task.cancelled():
+            ex = task.exception()
+            if ex is not None:
+                self._state = 'EXCEPTION'
+                self.log.error('Exception while running task: %s', ex)
+                return {'RUNNING_MODAL'}
+
         if self._state == 'QUIT':
             self._finish(context)
             return {'FINISHED'}
@@ -451,6 +459,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         drawers = {
             'BROWSING': self._draw_browser,
             'DOWNLOADING_TEXTURE': self._draw_downloading,
+            'EXCEPTION': self._draw_exception,
         }
 
         if self._state in drawers:
@@ -521,9 +530,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def _draw_downloading(self, context):
         """OpenGL drawing code for the DOWNLOADING_TEXTURE state."""
 
-        window_region = self._window_region(context)
-        content_width = window_region.width
-        content_height = window_region.height
+        content_height, content_width = self._window_size(context)
 
         bgl.glEnable(bgl.GL_BLEND)
         bgl.glColor4f(0.0, 0.0, 0.2, 0.6)
@@ -539,6 +546,41 @@ class BlenderCloudBrowser(bpy.types.Operator):
                      content_width * 0.5 - text_width * 0.5,
                      content_height * 0.7 + text_height * 0.5, 0)
         blf.draw(font_id, text)
+        bgl.glDisable(bgl.GL_BLEND)
+
+    def _window_size(self, context):
+        window_region = self._window_region(context)
+        content_width = window_region.width
+        content_height = window_region.height
+        return content_height, content_width
+
+    def _draw_exception(self, context):
+        """OpenGL drawing code for the EXCEPTION state."""
+
+        import textwrap
+
+        content_height, content_width = self._window_size(context)
+
+        bgl.glEnable(bgl.GL_BLEND)
+        bgl.glColor4f(0.2, 0.0, 0.0, 0.6)
+        bgl.glRectf(0, 0, content_width, content_height)
+
+        font_id = 0
+        text = "An error occurred:\n%s" % self.async_task.exception()
+        lines = textwrap.wrap(text)
+
+        bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
+        blf.size(font_id, 20, 72)
+        _, text_height = blf.dimensions(font_id, 'yhBp')
+
+        def position(line_nr):
+            blf.position(font_id,
+                         content_width * 0.1,
+                         content_height * 0.8 - line_nr * text_height, 0)
+
+        for line_idx, line in enumerate(lines):
+            position(line_idx)
+            blf.draw(font_id, line)
         bgl.glDisable(bgl.GL_BLEND)
 
     def get_clicked(self) -> MenuItem:
