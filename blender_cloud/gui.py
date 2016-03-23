@@ -483,7 +483,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def _draw_browser(self, context):
         """OpenGL drawing code for the BROWSING state."""
 
-        margin_x = 20
+        margin_x = 5
         margin_y = 5
         padding_x = 5
 
@@ -492,7 +492,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         content_height = window_region.height - margin_y * 2
 
         content_x = margin_x
-        content_y = context.area.height - margin_y - target_item_height - 50
+        content_y = context.area.height - margin_y - target_item_height
 
         col_count = content_width // target_item_width
 
@@ -508,7 +508,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         if self.current_display_content:
             for item_idx, item in enumerate(self.current_display_content):
-                x = (item_idx % col_count) * block_width
+                x = content_x + (item_idx % col_count) * block_width
                 y = content_y - (item_idx // col_count) * block_height
 
                 item.update_placement(x, y, item_width, item_height)
@@ -519,7 +519,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
             bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
             blf.size(font_id, 20, 72)
             text_width, text_height = blf.dimensions(font_id, text)
-            blf.position(font_id, content_x + content_width * 0.5 - text_width * 0.5,
+            blf.position(font_id,
+                         content_x + content_width * 0.5 - text_width * 0.5,
                          content_y - content_height * 0.3 + text_height * 0.5, 0)
             blf.draw(font_id, text)
 
