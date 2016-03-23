@@ -77,14 +77,16 @@ def register():
         from . import blender, gui, async_loop
 
     async_loop.setup_asyncio_executor()
+    async_loop.register()
 
     blender.register()
     gui.register()
 
 
 def unregister():
-    from . import blender, gui
+    from . import blender, gui, async_loop
 
     gui.unregister()
     blender.unregister()
+    async_loop.unregister()
 

@@ -9,6 +9,9 @@ import bpy
 
 log = logging.getLogger(__name__)
 
+# Keeps track of whether a loop-kicking operator is already running.
+_loop_kicking_operator_running = False
+
 
 def setup_asyncio_executor():
     """Sets up AsyncIO to run on a single thread.
@@ -24,16 +27,21 @@ def setup_asyncio_executor():
     # loop.set_debug(True)
 
 
-def kick_async_loop(*args):
+def kick_async_loop(*args) -> bool:
+    """Performs a single iteration of the asyncio event loop.
+
+    :return: whether the asyncio loop should stop after this kick.
+    """
+
     loop = asyncio.get_event_loop()
 
-    # We always need to do one more 'kick' to handle task-done callbacks.
+    # Even when we want to stop, we always need to do one more
+    # 'kick' to handle task-done callbacks.
     stop_after_this_kick = False
 
     if loop.is_closed():
         log.warning('loop closed, stopping immediately.')
-        stop_async_loop()
-        return
+        return True
 
     all_tasks = asyncio.Task.all_tasks()
     if not len(all_tasks):
@@ -63,33 +71,61 @@ def kick_async_loop(*args):
     loop.stop()
     loop.run_forever()
 
-    if stop_after_this_kick:
-        stop_async_loop()
-
-
-def async_loop_handler() -> callable:
-    """Returns the asynchronous loop handler `kick_async_loop`
-
-    Only returns the function if it is installed as scene_update_pre handler, otherwise
-    it returns None.
-    """
-
-    name = kick_async_loop.__name__
-    for handler in bpy.app.handlers.scene_update_pre:
-        if getattr(handler, '__name__', '') == name:
-            return handler
-    return None
+    return stop_after_this_kick
 
 
 def ensure_async_loop():
-    if async_loop_handler() is not None:
-        return
-    bpy.app.handlers.scene_update_pre.append(kick_async_loop)
+    log.debug('Starting asyncio loop')
+    result = bpy.ops.asyncio.loop()
+    log.debug('Result of starting modal operator is %r', result)
 
 
-def stop_async_loop():
-    handler = async_loop_handler()
-    if handler is None:
-        return
-    bpy.app.handlers.scene_update_pre.remove(handler)
-    log.debug('stopped async loop.')
+class AsyncLoopModalOperator(bpy.types.Operator):
+    bl_idname = 'asyncio.loop'
+    bl_label = 'Runs the asyncio main loop'
+
+    timer = None
+    log = logging.getLogger(__name__ + '.AsyncLoopModalOperator')
+
+    def execute(self, context):
+        return self.invoke(context, None)
+
+    def invoke(self, context, event):
+        global _loop_kicking_operator_running
+
+        if _loop_kicking_operator_running:
+            self.log.debug('Another loop-kicking operator is already running.')
+            return {'PASS_THROUGH'}
+
+        context.window_manager.modal_handler_add(self)
+        _loop_kicking_operator_running = True
+
+        wm = context.window_manager
+        self.timer = wm.event_timer_add(0.00001, context.window)
+
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        global _loop_kicking_operator_running
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        # self.log.debug('KICKING LOOP')
+        stop_after_this_kick = kick_async_loop()
+        if stop_after_this_kick:
+            context.window_manager.event_timer_remove(self.timer)
+            _loop_kicking_operator_running = False
+
+            self.log.debug('Stopped asyncio loop kicking')
+            return {'FINISHED'}
+
+        return {'RUNNING_MODAL'}
+
+
+def register():
+    bpy.utils.register_class(AsyncLoopModalOperator)
+
+
+def unregister():
+    bpy.utils.unregister_class(AsyncLoopModalOperator)
