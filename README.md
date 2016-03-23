@@ -1,10 +1,28 @@
 Blender Cloud addon
 ===================
 
+This addon is a *proof of concept* demonstrating the following features:
+
+* Using the [Blender ID addon](https://github.com/fsiddi/blender-id-addon)
+  to authenticate against [Blender ID](https://www.blender.org/id/)
+* Using the [Pillar SDK](https://github.com/armadillica/pillar-python-sdk)
+  to browse the Blender Cloud texture library from within Blender.
+* Using Python's [asyncio](https://docs.python.org/3/library/asyncio.html)
+  module to provide asynchronous execution of Python code in Blender.
+
+
+Installation
+------------
+
 Installation requires the [Pillar SDK](https://github.com/armadillica/pillar-python-sdk)
 to be installed. It can either be installed regularly somewhere on
 the Python PATH, or be stored as a [wheel file](http://pythonwheels.com/)
 at `blender_cloud/wheels/pillar_sdk-*.whl`.
+
+Installation also requires wheels for [CacheControl](https://pypi.python.org/pypi/CacheControl)
+and [lockfile](https://pypi.python.org/pypi/lockfile) to be placed in
+`blender_cloud/wheels`, or installed somewhere where Blender can find
+them.
 
 
 Design
