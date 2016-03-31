@@ -5,3 +5,5 @@
 blender_cloud/wheels/*.whl
 /textures*/
 /test_*.py
+/dist/
+/build/
