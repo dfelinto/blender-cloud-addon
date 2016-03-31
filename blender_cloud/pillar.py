@@ -44,7 +44,7 @@ def with_existing_dir(filename: str, open_mode: str, encoding=None):
     directory = os.path.dirname(filename)
     if not os.path.exists(directory):
         log.debug('Creating directory %s', directory)
-        os.makedirs(directory, mode=0o700, exist_ok=True)
+        os.makedirs(directory, exist_ok=True)
     with open(filename, open_mode, encoding=encoding) as file_object:
         yield file_object
 
