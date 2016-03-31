@@ -600,7 +600,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         node_path_components = [node['name'] for node in self.path_stack if node is not None]
         local_path_components = [self.project_uuid] + node_path_components + [self.node['name']]
 
-        top_texture_directory = bpy.path.abspath(context.scene.blender_cloud_dir)
+        top_texture_directory = bpy.path.abspath(context.scene.local_texture_dir)
         local_path = os.path.join(top_texture_directory, *local_path_components)
         meta_path = os.path.join(top_texture_directory, '.blender_cloud')
 

@@ -23,6 +23,11 @@ class BlenderCloudPreferences(AddonPreferences):
         default='https://pillar.blender.org:5000/'
     )
 
+    local_texture_dir = StringProperty(
+        name='Default Blender Cloud texture storage directory',
+        subtype='DIR_PATH',
+        default='//textures')
+
     def draw(self, context):
         layout = self.layout
 
@@ -52,6 +57,11 @@ class BlenderCloudPreferences(AddonPreferences):
         sub = layout.column()
         sub.label(text=blender_id_text, icon=blender_id_icon)
         sub.label(text="* " + blender_id_help)
+
+        sub = layout.column()
+        sub.label(text='Local directory for downloaded textures')
+        sub.prop(self, "local_texture_dir", text='Default')
+        sub.prop(context.scene, "local_texture_dir", text='Current scene')
 
         # options for Pillar
         sub = layout.column()
@@ -111,10 +121,19 @@ def register():
         name="Blender Cloud node UUID",
         default='')  # empty == top-level of project
 
-    Scene.blender_cloud_dir = StringProperty(
-        name='Blender Cloud texture storage directory',
+    addon_prefs = preferences()
+
+    def default_if_empty(scene, context):
+        """The scene's local_texture_dir, if empty, reverts to the addon prefs."""
+
+        if not scene.local_texture_dir:
+            scene.local_texture_dir = addon_prefs.local_texture_dir
+
+    Scene.local_texture_dir = StringProperty(
+        name='Blender Cloud texture storage directory for current scene',
         subtype='DIR_PATH',
-        default='//textures')
+        default=addon_prefs.local_texture_dir,
+        update=default_if_empty)
 
 
 def unregister():
