@@ -4,6 +4,7 @@ import os
 import functools
 import logging
 from contextlib import closing, contextmanager
+import pathlib
 
 import requests
 import requests.structures
@@ -40,6 +41,34 @@ class PillarError(RuntimeError):
     exist but still can't be found). HTTP communication errors are signalled
     with other exceptions.
     """
+
+
+class CloudPath(pathlib.PurePosixPath):
+    """Cloud path, in the form of /project uuid/node uuid/node uuid/...
+
+    The components are:
+        - the root '/'
+        - the project UUID
+        - zero or more node UUIDs.
+    """
+
+    @property
+    def project_uuid(self) -> str:
+        assert self.parts[0] == '/'
+        return self.parts[1]
+
+    @property
+    def node_uuids(self) -> list:
+        assert self.parts[0] == '/'
+        return self.parts[2:]
+
+    @property
+    def node_uuid(self) -> str:
+        node_uuids = self.node_uuids
+
+        if not node_uuids:
+            return None
+        return node_uuids[-1]
 
 
 @contextmanager
