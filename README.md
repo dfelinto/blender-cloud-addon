@@ -20,24 +20,40 @@ This addon is a *proof of concept* demonstrating the following features:
 {F299745}
 
 
-Installation
-------------
+Building an installable ZIP file
+--------------------------------
 
-Installation requires the [Pillar SDK](https://github.com/armadillica/pillar-python-sdk)
-to be installed. It can either be installed regularly somewhere on
-the Python PATH, or be stored as a [wheel file](http://pythonwheels.com/)
-at `blender_cloud/wheels/pillar_sdk-*.whl`.
+To build a ZIP file that can be installed by Blender, run
+`python setup.py bdist`. This creates a ZIP file in the `dist`
+directory. This command requires Git to be installed and available
+from the CLI as `git`.
 
-Installation also requires wheels for [CacheControl](https://pypi.python.org/pypi/CacheControl)
-and [lockfile](https://pypi.python.org/pypi/lockfile) to be placed in
-`blender_cloud/wheels`, or installed somewhere where Blender can find
-them.
+The addon requires:
 
-The above requirements can be downloaded and built automatically
-by running the `build-dependency-wheels.sh` script. Only tested on
-Ubuntu Linux 14.04.
+* The [Pillar Python SDK](https://github.com/armadillica/pillar-python-sdk)
+* [CacheControl](https://pypi.python.org/pypi/CacheControl)
+* [lockfile](https://pypi.python.org/pypi/lockfile), as this is a
+  dependency of CacheControl.
 
-The addon requires HTTPS connections, and thus is dependent on
+These dependencies should either be installed somewhere where Blender
+can find them, or be bundled as wheel files in `blender_cloud/wheels`.
+The `python setup.py bdist` command gathers the dependencies and bundles
+them as wheel files.
+
+Installing the addon
+--------------------
+
+* To build the addon, run `python setup.py bdist` as described above.
+* If you don't have one already, sign up for an account at
+  the [Blender ID site](https://www.blender.org/id/).
+* As a final step, install and log in with the
+  [Blender ID addon](https://developer.blender.org/diffusion/BIA/).
+* Install the Blender Cloud addon in Blender (User Preferences →
+  Addons → Install from file...) by pointing it to
+  `dist/blender_cloud*.addon.zip`.
+* Enable the addon in User Preferences → Addons → System.
+
+NOTE: The addon requires HTTPS connections, and thus is dependent on
 [D1845](https://developer.blender.org/D1845). You can do either of
 these:
 
@@ -48,18 +64,13 @@ these:
   You can use the same file from your local requests installation, or
   use `/etc/ssl/certs/ca-certificates.crt`.
 
-As a final step, install and log in with the
-[Blender ID addon](https://developer.blender.org/diffusion/BIA/).
-
 Running the addon
 -----------------
 
-After installing the Blender Cloud addon, log in with the Blender ID
-(in the addon preferences). Then activate the Blender Cloud addon,
-and press Ctrl+Alt+Shift+A to activate it (yes, this needs work).
-Downloaded textures are loaded into image datablocks.
-The download location can be configured using the
-`bpy.context.scene.blender_cloud_dir` property (no GUI yet).
+After installing the Blender Cloud addon, press Ctrl+Alt+Shift+A to
+activate it (yes, this needs work). Downloaded textures are loaded into
+image datablocks. The download location can be configured in the addon
+preferences.
 
 
 Design
