@@ -3,7 +3,7 @@ Blender Cloud addon
 
 This addon is a *proof of concept* demonstrating the following features:
 
-* Using the [Blender ID addon](https://github.com/fsiddi/blender-id-addon)
+* Using the [Blender ID addon](https://developer.blender.org/diffusion/BIA/)
   to authenticate against [Blender ID](https://www.blender.org/id/)
 * Using the [Pillar SDK](https://github.com/armadillica/pillar-python-sdk)
   to browse the Blender Cloud texture library from within Blender.
@@ -13,11 +13,11 @@ This addon is a *proof of concept* demonstrating the following features:
 
 ### Browsing texture folders
 
-![Browsing texture folders](screenshot_folders.png)
+{F299744}
 
 ### Browsing textures
 
-![Browsing textures](screenshot_textures.png)
+{F299745}
 
 
 Installation
@@ -49,7 +49,7 @@ these:
   use `/etc/ssl/certs/ca-certificates.crt`.
 
 As a final step, install and log in with the
-[Blender ID addon](https://github.com/fsiddi/blender-id-addon).
+[Blender ID addon](https://developer.blender.org/diffusion/BIA/).
 
 Running the addon
 -----------------
@@ -114,34 +114,32 @@ To start an asynchronous task and be notified when it is done, use the
 following. This uses the Blender-specific `async_loop` module.
 
 
-```python
-import asyncio
-from blender_cloud import async_loop
+    lang=python,name=async_example.py
+    import asyncio
+    from blender_cloud import async_loop
 
-async def some_async_func():
-    return 1 + 1
+    async def some_async_func():
+        return 1 + 1
 
-def done_callback(task):
-    print('Task result: ', task.result())
+    def done_callback(task):
+        print('Task result: ', task.result())
 
-async_task = asyncio.ensure_future(some_async_func())
-async_task.add_done_callback(done_callback)
-async_loop.ensure_async_loop()
-```
+    async_task = asyncio.ensure_future(some_async_func())
+    async_task.add_done_callback(done_callback)
+    async_loop.ensure_async_loop()
 
 To start an asynchronous task and block until it is done, use the
 following.
 
-```python
-import asyncio
+    lang=python,name=blocking_example.py
+    import asyncio
 
-async def some_async_func():
-    return 1 + 1
+    async def some_async_func():
+        return 1 + 1
 
-loop = asyncio.get_event_loop()
-res = loop.run_until_complete(some_async_func())
-print('Task result:', res)
-```
+    loop = asyncio.get_event_loop()
+    res = loop.run_until_complete(some_async_func())
+    print('Task result:', res)
 
 
 Communication & File Structure
