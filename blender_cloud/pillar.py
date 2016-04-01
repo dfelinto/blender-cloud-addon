@@ -58,18 +58,12 @@ def save_as_json(pillar_resource, json_filename):
         json.dump(pillar_resource, outfile, sort_keys=True, cls=pillarsdk.utils.PillarJSONEncoder)
 
 
-def blender_id_profile() -> dict:
+def blender_id_profile() -> 'blender_id.BlenderIdProfile':
     """Returns the Blender ID profile of the currently logged in user."""
 
     # Allow overriding before we import the bpy module.
     if _testing_blender_id_profile is not None:
         return _testing_blender_id_profile
-
-    import bpy
-
-    active_user_id = getattr(bpy.context.window_manager, 'blender_id_active_profile', None)
-    if not active_user_id:
-        return None
 
     import blender_id
     return blender_id.get_active_profile()
@@ -100,9 +94,9 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
         pillarsdk.Api.requests_session = cache.requests_session()
 
         _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
-                                    username=profile['username'],
+                                    username=profile.username,
                                     password=None,
-                                    token=profile['token'])
+                                    token=profile.token)
 
     return _pillar_api
 

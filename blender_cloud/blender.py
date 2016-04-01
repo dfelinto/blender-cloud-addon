@@ -3,8 +3,6 @@
 Separated from __init__.py so that we can import & run from non-Blender environments.
 """
 
-import os.path
-
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene
 from bpy.props import StringProperty
@@ -50,7 +48,7 @@ class BlenderCloudPreferences(AddonPreferences):
             blender_id_help = "To login, go to the Blender ID add-on preferences."
         else:
             blender_id_icon = 'WORLD_DATA'
-            blender_id_text = "You are logged in as %s." % blender_id_profile['username']
+            blender_id_text = "You are logged in as %s." % blender_id_profile.username
             blender_id_help = "To logout or change profile, " \
                               "go to the Blender ID add-on preferences."
 
@@ -82,8 +80,12 @@ class PillarCredentialsUpdate(Operator):
 
     @classmethod
     def is_logged_in(cls, context):
-        active_user_id = getattr(context.window_manager, 'blender_id_active_profile', None)
-        return bool(active_user_id)
+        try:
+            import blender_id
+        except ImportError:
+            return False
+
+        return blender_id.is_logged_in()
 
     def execute(self, context):
         # Only allow activation when the user is actually logged in.

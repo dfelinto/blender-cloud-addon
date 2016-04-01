@@ -34,12 +34,16 @@ def cache_directory(*subdirs) -> str:
 
     from . import pillar
 
-    profile = pillar.blender_id_profile() or {'username': 'anonymous'}
+    profile = pillar.blender_id_profile()
+    if profile:
+        username = profile.username
+    else:
+        username = 'anonymous'
 
     # TODO: use bpy.utils.user_resource('CACHE', ...)
     # once https://developer.blender.org/T47684 is finished.
     user_cache_dir = appdirs.user_cache_dir(appname='Blender', appauthor=False)
-    cache_dir = os.path.join(user_cache_dir, 'blender_cloud', profile['username'], *subdirs)
+    cache_dir = os.path.join(user_cache_dir, 'blender_cloud', username, *subdirs)
 
     os.makedirs(cache_dir, mode=0o700, exist_ok=True)
 
