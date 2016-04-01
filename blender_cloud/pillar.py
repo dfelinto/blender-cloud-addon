@@ -27,6 +27,9 @@ class UserNotLoggedInError(RuntimeError):
     This is basically for every interaction with Pillar.
     """
 
+    def __str__(self):
+        return 'UserNotLoggedInError'
+
 
 class PillarError(RuntimeError):
     """Raised when there is some issue with the communication with Pillar.

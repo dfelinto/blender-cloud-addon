@@ -566,7 +566,15 @@ class BlenderCloudBrowser(bpy.types.Operator):
         bgl.glRectf(0, 0, content_width, content_height)
 
         font_id = 0
-        text = "An error occurred:\n%s" % self.async_task.exception()
+        ex = self.async_task.exception()
+        if isinstance(ex, pillar.UserNotLoggedInError):
+            ex_msg = 'You are not logged in on Blender ID. Please log in at User Preferences, ' \
+                     'System, Blender ID.'
+        else:
+            ex_msg = str(ex)
+            if not ex_msg:
+                ex_msg = str(type(ex))
+        text = "An error occurred:\n%s" % ex_msg
         lines = textwrap.wrap(text)
 
         bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
