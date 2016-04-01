@@ -313,6 +313,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
             return
 
         # Signal that we want to stop.
+        self.async_task.cancel()
         if not self.signalling_future.done():
             self.log.info("Signalling that we want to cancel anything that's running.")
             self.signalling_future.cancel()

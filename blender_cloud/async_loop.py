@@ -4,6 +4,7 @@ import asyncio
 import traceback
 import concurrent.futures
 import logging
+import gc
 
 import bpy
 
@@ -53,6 +54,9 @@ def kick_async_loop(*args) -> bool:
                   len(all_tasks))
         stop_after_this_kick = True
 
+        # Clean up circular references between tasks.
+        gc.collect()
+
         for task_idx, task in enumerate(all_tasks):
             if not task.done():
                 continue
@@ -67,6 +71,9 @@ def kick_async_loop(*args) -> bool:
             except Exception:
                 print('{}: resulted in exception'.format(task))
                 traceback.print_exc()
+
+            # for ref in gc.get_referrers(task):
+            #     log.debug('      - referred by %s', ref)
 
     loop.stop()
     loop.run_forever()
