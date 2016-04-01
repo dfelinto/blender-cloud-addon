@@ -33,14 +33,14 @@ class BlenderCloudPreferences(AddonPreferences):
 
         # Carefully try and import the Blender ID addon
         try:
-            import blender_id.profiles as blender_id_profiles
+            import blender_id
         except ImportError:
-            blender_id_profiles = None
+            blender_id = None
             blender_id_profile = None
         else:
-            blender_id_profile = blender_id_profiles.get_active_profile()
+            blender_id_profile = blender_id.get_active_profile()
 
-        if blender_id_profiles is None:
+        if blender_id is None:
             blender_id_icon = 'ERROR'
             blender_id_text = "This add-on requires Blender ID"
             blender_id_help = "Make sure that the Blender ID add-on is installed and activated"

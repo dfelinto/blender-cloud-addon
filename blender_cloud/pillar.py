@@ -68,8 +68,8 @@ def blender_id_profile() -> dict:
     if not active_user_id:
         return None
 
-    import blender_id.profiles
-    return blender_id.profiles.get_active_profile()
+    import blender_id
+    return blender_id.get_active_profile()
 
 
 def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
