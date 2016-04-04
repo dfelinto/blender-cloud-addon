@@ -18,7 +18,7 @@ class BlenderCloudPreferences(AddonPreferences):
     pillar_server = bpy.props.StringProperty(
         name='Blender Cloud Server',
         description='URL of the Blender Cloud backend server',
-        default='https://pillar.blender.org:5000/'
+        default='https://cloudapi.blender.org/'
     )
 
     local_texture_dir = StringProperty(
