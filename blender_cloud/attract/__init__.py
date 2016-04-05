@@ -106,7 +106,25 @@ class ToolsPanel(Panel):
         layout.operator('attract.shots_order_update')
 
 
-class AttractShotSubmitNew(Operator):
+class AttractOperatorMixin:
+    """Mix-in class for all Attract operators."""
+
+    def _project_needs_setup_error(self):
+        self.report({'ERROR'}, 'Your Blender Cloud project is not set up for Attract.')
+        return {'CANCELLED'}
+
+    def find_node_type(self, node_type_name: str) -> 'pillarsdk.NodeType':
+        from .. import pillar
+
+        node_type_list = pillar.call(NodeType.all, {'where': "name=='%s'" % node_type_name})
+        if not node_type_list._items:
+            return self._project_needs_setup_error()
+
+        node_type = node_type_list._items[0]
+        return node_type
+
+
+class AttractShotSubmitNew(AttractOperatorMixin, Operator):
     bl_idname = "attract.shot_submit_new"
     bl_label = "Submit to Attract"
 
@@ -116,17 +134,17 @@ class AttractShotSubmitNew(Operator):
         return not strip.atc_object_id
 
     def execute(self, context):
-        from blender_cloud import pillar
+        from .. import pillar
         import blender_id
 
         strip = active_strip(context)
         if strip.atc_object_id:
             return
 
-        # Filter the NodeType collection, but it's still a list
-        node_type_list = pillar.call(NodeType.all, {'where': "name=='shot'"})
-        # Get the 'shot' node type
-        node_type = node_type_list['_items'][0]
+        node_type = self.find_node_type('shot')
+        if isinstance(node_type, set):  # in case of error
+            return node_type
+
         # Define the shot properties
         prop = {'name': strip.name,
                 'description': '',
@@ -156,7 +174,7 @@ class AttractShotSubmitNew(Operator):
         return {'FINISHED'}
 
 
-class AttractShotRelink(Operator):
+class AttractShotRelink(AttractOperatorMixin, Operator):
     bl_idname = "attract.shot_relink"
     bl_label = "Relink to Attract"
     strip_atc_object_id = bpy.props.StringProperty()
@@ -190,7 +208,7 @@ class AttractShotRelink(Operator):
         col.prop(self, 'strip_atc_object_id', text='Shot ID')
 
 
-class AttractShotSubmitUpdate(Operator):
+class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shot_submit_update'
     bl_label = 'Update'
     bl_description = 'Syncronizes local and remote changes'
@@ -211,7 +229,7 @@ class AttractShotSubmitUpdate(Operator):
         return {'FINISHED'}
 
 
-class AttractShotDelete(Operator):
+class AttractShotDelete(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shot_delete'
     bl_label = 'Delete'
     bl_description = 'Remove from Attract'
@@ -224,7 +242,7 @@ class AttractShotDelete(Operator):
         return {'FINISHED'}
 
 
-class AttractStripUnlink(Operator):
+class AttractStripUnlink(AttractOperatorMixin, Operator):
     bl_idname = 'attract.strip_unlink'
     bl_label = 'Unlink'
     bl_description = 'Remove Attract props from the strip'
@@ -235,7 +253,7 @@ class AttractStripUnlink(Operator):
         return {'FINISHED'}
 
 
-class AttractShotsOrderUpdate(Operator):
+class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shots_order_update'
     bl_label = 'Update shots order'
 
@@ -244,8 +262,9 @@ class AttractShotsOrderUpdate(Operator):
 
         # Get all shot nodes from server, build dictionary using ObjectID
         # as indexes
-        node_type_list = pillar.call(NodeType.all, {'where': "name=='shot'"})
-        node_type = node_type_list._items[0]
+        node_type = self.find_node_type('shot')
+        if isinstance(node_type, set):  # in case of error
+            return node_type
 
         shots = pillar.call(Node.all, {
             'where': {'node_type': node_type._id},
