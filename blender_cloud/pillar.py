@@ -14,6 +14,8 @@ from pillarsdk.utils import sanitize_filename
 
 from . import cache
 
+SUBCLIENT_ID = 'PILLAR'
+
 _pillar_api = None  # will become a pillarsdk.Api object.
 log = logging.getLogger(__name__)
 uncached_session = requests.session()
@@ -69,6 +71,12 @@ def blender_id_profile() -> 'blender_id.BlenderIdProfile':
     return blender_id.get_active_profile()
 
 
+def pillar_user_uuid() -> str:
+    """Returns the UUID of the user."""
+
+    call(pillarsdk.User, {''})
+
+
 def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
@@ -85,6 +93,10 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     if not profile:
         raise UserNotLoggedInError()
 
+    subclient = profile.subclients.get(SUBCLIENT_ID)
+    if not subclient:
+        raise UserNotLoggedInError()
+
     if _pillar_api is None:
         # Allow overriding the endpoint before importing Blender-specific stuff.
         if pillar_endpoint is None:
@@ -94,9 +106,9 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
         pillarsdk.Api.requests_session = cache.requests_session()
 
         _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
-                                    username=profile.username,
+                                    username=subclient['subclient_user_id'],
                                     password=None,
-                                    token=profile.token)
+                                    token=subclient['scst'])
 
     return _pillar_api
 

@@ -21,6 +21,13 @@ class BlenderCloudPreferences(AddonPreferences):
         default='https://cloudapi.blender.org/'
     )
 
+    # TODO: Move to the Scene properties?
+    project_uuid = bpy.props.StringProperty(
+        name='Project UUID',
+        description='UUID of the current Blender Cloud project',
+        default='5703957698377322577be77d'  # TODO: change default to something more generic
+    )
+
     local_texture_dir = StringProperty(
         name='Default Blender Cloud texture storage directory',
         subtype='DIR_PATH',
@@ -40,17 +47,23 @@ class BlenderCloudPreferences(AddonPreferences):
 
         if blender_id is None:
             blender_id_icon = 'ERROR'
-            blender_id_text = "This add-on requires Blender ID"
-            blender_id_help = "Make sure that the Blender ID add-on is installed and activated"
+            blender_id_text = 'This add-on requires Blender ID'
+            blender_id_help = 'Make sure that the Blender ID add-on is installed and activated'
         elif not blender_id_profile:
             blender_id_icon = 'ERROR'
-            blender_id_text = "You are logged out."
-            blender_id_help = "To login, go to the Blender ID add-on preferences."
+            blender_id_text = 'You are logged out.'
+            blender_id_help = 'To login, go to the Blender ID add-on preferences.'
+        elif not pillar.SUBCLIENT_ID in blender_id_profile.subclients:
+            blender_id_icon = 'QUESTION'
+            blender_id_text = 'No Blender Cloud credentials.'
+            blender_id_help = ('You are logged in on Blender ID, but your credentials have not '
+                               'been synchronized with Blender Cloud yet. Press the Update '
+                               'Credentials button.')
         else:
             blender_id_icon = 'WORLD_DATA'
-            blender_id_text = "You are logged in as %s." % blender_id_profile.username
-            blender_id_help = "To logout or change profile, " \
-                              "go to the Blender ID add-on preferences."
+            blender_id_text = 'You are logged in as %s.' % blender_id_profile.username
+            blender_id_help = ('To logout or change profile, '
+                               'go to the Blender ID add-on preferences.')
 
         sub = layout.column()
         sub.label(text=blender_id_text, icon=blender_id_icon)
@@ -65,13 +78,14 @@ class BlenderCloudPreferences(AddonPreferences):
         sub = layout.column()
         sub.enabled = blender_id_icon != 'ERROR'
         sub.prop(self, "pillar_server")
+        sub.prop(self, "project_uuid")
         sub.operator("pillar.credentials_update")
 
 
 class PillarCredentialsUpdate(Operator):
     """Updates the Pillar URL and tests the new URL."""
-    bl_idname = "pillar.credentials_update"
-    bl_label = "Update credentials"
+    bl_idname = 'pillar.credentials_update'
+    bl_label = 'Update credentials'
 
     @classmethod
     def poll(cls, context):
@@ -88,20 +102,33 @@ class PillarCredentialsUpdate(Operator):
         return blender_id.is_logged_in()
 
     def execute(self, context):
+        import blender_id
+        import asyncio
+
         # Only allow activation when the user is actually logged in.
         if not self.is_logged_in(context):
-            self.report({'ERROR'}, "No active profile found")
+            self.report({'ERROR'}, 'No active profile found')
+            return {'CANCELLED'}
+
+        endpoint = preferences().pillar_server.rstrip('/')
+
+        # Create a subclient token and send it to Pillar.
+        try:
+            blender_id.create_subclient_token(pillar.SUBCLIENT_ID, endpoint)
+        except blender_id.BlenderIdCommError as ex:
+            print(ex)
+            self.report({'ERROR'}, 'Failed to sync Blender ID to %s' % endpoint)
             return {'CANCELLED'}
 
         # Test the new URL
-        endpoint = bpy.context.user_preferences.addons[ADDON_NAME].preferences.pillar_server
         pillar._pillar_api = None
         try:
-            pillar.get_project_uuid('textures')  # Just any query will do.
-        except Exception as e:
-            print(e)
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(pillar.get_project_uuid('textures'))  # Any query will do.
+        except Exception as ex:
+            print(ex)
             self.report({'ERROR'}, 'Failed connection to %s' % endpoint)
-            return {'FINISHED'}
+            return {'CANCELLED'}
 
         self.report({'INFO'}, 'Updated cloud server address to %s' % endpoint)
         return {'FINISHED'}
