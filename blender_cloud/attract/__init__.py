@@ -46,7 +46,7 @@ else:
 import bpy
 from pillarsdk.api import Api
 from pillarsdk.nodes import Node
-from pillarsdk.nodes import NodeType
+from pillarsdk.projects import Project
 from pillarsdk import utils
 from pillarsdk.exceptions import ResourceNotFound
 
@@ -113,14 +113,25 @@ class AttractOperatorMixin:
         self.report({'ERROR'}, 'Your Blender Cloud project is not set up for Attract.')
         return {'CANCELLED'}
 
-    def find_node_type(self, node_type_name: str) -> 'pillarsdk.NodeType':
-        from .. import pillar
+    def find_node_type(self, node_type_name: str) -> dict:
+        from .. import pillar, blender
 
-        node_type_list = pillar.call(NodeType.all, {'where': "name=='%s'" % node_type_name})
-        if not node_type_list._items:
+        prefs = blender.preferences()
+
+        project = pillar.call(Project.find_one, {
+            'where': {'_id': prefs.project_uuid},
+            'projection': {'node_types': {'$elemMatch': {'name': node_type_name}}}
+        })
+
+        # FIXME: Eve doesn't seem to handle the $elemMatch projection properly,
+        # even though it works fine in MongoDB itself. As a result, we have to
+        # search for the node type.
+        node_type_list = project['node_types']
+        node_type = next((nt for nt in node_type_list if nt['name'] == node_type_name), None)
+
+        if not node_type:
             return self._project_needs_setup_error()
 
-        node_type = node_type_list._items[0]
         return node_type
 
 
@@ -134,7 +145,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
         return not strip.atc_object_id
 
     def execute(self, context):
-        from .. import pillar
+        from .. import pillar, blender
         import blender_id
 
         strip = active_strip(context)
@@ -153,7 +164,8 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
                                'cut_in': strip.frame_offset_start,
                                'cut_out': strip.frame_offset_start + strip.frame_final_duration},
                 'order': 0,
-                'node_type': node_type['_id'],
+                'node_type': 'shot',
+                'project': blender.preferences().project_uuid,
                 'user': blender_id.get_active_user_id()}
 
         # Create a Node item with the attract API
@@ -186,7 +198,8 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
         try:
             node = pillar.call(Node.find, self.strip_atc_object_id)
         except ResourceNotFound:
-            self.report({'ERROR'}, 'No shot found on the server')
+            self.report({'ERROR'}, 'Shot %r not found on the server, unable to relink.'
+                        % self.strip_atc_object_id)
             return {'CANCELLED'}
 
         strip.atc_object_id = self.strip_atc_object_id
