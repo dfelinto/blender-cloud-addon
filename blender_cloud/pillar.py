@@ -108,7 +108,7 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
         _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
                                     username=subclient['subclient_user_id'],
                                     password=None,
-                                    token=subclient['scst'])
+                                    token=subclient['token'])
 
     return _pillar_api
 
