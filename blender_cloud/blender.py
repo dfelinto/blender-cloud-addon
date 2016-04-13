@@ -3,6 +3,8 @@
 Separated from __init__.py so that we can import & run from non-Blender environments.
 """
 
+import logging
+
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene
 from bpy.props import StringProperty
@@ -10,6 +12,7 @@ from bpy.props import StringProperty
 from . import pillar, gui
 
 ADDON_NAME = 'blender_cloud'
+log = logging.getLogger(__name__)
 
 
 class BlenderCloudPreferences(AddonPreferences):
@@ -116,7 +119,7 @@ class PillarCredentialsUpdate(Operator):
         try:
             blender_id.create_subclient_token(pillar.SUBCLIENT_ID, endpoint)
         except blender_id.BlenderIdCommError as ex:
-            print(ex)
+            log.exception('Error sending subclient-specific token to Blender')
             self.report({'ERROR'}, 'Failed to sync Blender ID to %s' % endpoint)
             return {'CANCELLED'}
 
@@ -126,7 +129,7 @@ class PillarCredentialsUpdate(Operator):
             loop = asyncio.get_event_loop()
             loop.run_until_complete(pillar.get_project_uuid('textures'))  # Any query will do.
         except Exception as ex:
-            print(ex)
+            log.exception('Error in test call to Pillar')
             self.report({'ERROR'}, 'Failed connection to %s' % endpoint)
             return {'CANCELLED'}
 
