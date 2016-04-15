@@ -342,7 +342,8 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
                                      if strip.atc_object_id]
 
         strips_with_atc_object_id.sort(
-            key=lambda strip: strip.frame_start + strip.frame_offset_start)
+            key=lambda strip: strip.frame_final_start)
+
         for index, strip in enumerate(strips_with_atc_object_id):
             """
             # Currently we use the code below to force update all nodes.
