@@ -248,22 +248,28 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
 
 class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shot_submit_update'
-    bl_label = 'Update'
-    bl_description = 'Syncronizes local and remote changes'
+    bl_label = 'Submit update'
+    bl_description = 'Sends local changes to Attract'
 
     def execute(self, context):
         from .. import pillar
 
         strip = active_strip(context)
+
         # Update cut_in and cut_out properties on the strip
         # strip.atc_cut_in = strip.frame_offset_start
         # strip.atc_cut_out = strip.frame_offset_start + strip.frame_final_duration
+        # strip.atc_cut_in = strip.frame_final_start
+        # strip.atc_cut_out = strip.frame_final_end
+
         # print("Query Attract server with {0}".format(strip.atc_object_id))
         strip.atc_cut_out = strip.atc_cut_in + strip.frame_final_duration - 1
+
         node = pillar.call(Node.find, strip.atc_object_id)
         node.name = strip.atc_name
         node.description = strip.atc_description
         node.properties.notes = strip.atc_notes
+
         node.properties.cut_in = strip.atc_cut_in
         node.properties.cut_out = strip.atc_cut_out
         pillar.call(node.update)
@@ -366,7 +372,7 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
                 strip.atc_order = index
             except ResourceNotFound:
                 # Reset the attract properties for any shot not found on the server
-                # print("Error: shot {0} not found".format(strip.atc_object_id))
+                print("Warning: shot {0} not found".format(strip.atc_object_id))
                 remove_atc_props(strip)
 
         draw.tag_redraw_all_sequencer_editors()
