@@ -89,8 +89,12 @@ class ToolsPanel(Panel):
             layout.prop(strip, 'atc_description', text='Description')
             layout.prop(strip, 'atc_notes', text='Notes')
             layout.prop(strip, 'atc_status', text='Status')
-            layout.prop(strip, 'atc_cut_in', text='Cut in')
-            # layout.prop(strip, 'atc_cut_out', text='Cut out')
+            layout.prop(strip, 'atc_cut_in')
+
+            # Create a special sub-layout for read-only properties.
+            ro_sub = layout.column(align=True)
+            ro_sub.enabled = False
+            ro_sub.prop(strip, 'atc_cut_out')
 
             if strip.atc_is_synced:
                 layout.operator('attract.shot_submit_update')
