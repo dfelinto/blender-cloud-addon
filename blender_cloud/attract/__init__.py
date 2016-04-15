@@ -199,6 +199,8 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
         strip.atc_object_id = node['_id']
         strip.atc_is_synced = True
         strip.atc_name = node['name']
+        strip.atc_description = node['description']
+        strip.atc_notes = node['properties']['notes']
         strip.atc_cut_in = node['properties']['cut_in']
         strip.atc_cut_out = node['properties']['cut_out']
 
@@ -261,6 +263,7 @@ class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
         node = pillar.call(Node.find, strip.atc_object_id)
         node.name = strip.atc_name
         node.description = strip.atc_description
+        node.properties.notes = strip.atc_notes
         node.properties.cut_in = strip.atc_cut_in
         node.properties.cut_out = strip.atc_cut_out
         pillar.call(node.update)
