@@ -336,8 +336,7 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
 
         strips_with_atc_object_id.sort(
             key=lambda strip: strip.frame_start + strip.frame_offset_start)
-        index = 1
-        for strip in strips_with_atc_object_id:
+        for index, strip in enumerate(strips_with_atc_object_id):
             """
             # Currently we use the code below to force update all nodes.
             # Check that the shot is in the list of retrieved shots
@@ -353,12 +352,10 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
             # We get all nodes one by one. This is bad and stupid.
             try:
                 shot_node = pillar.call(Node.find, strip.atc_object_id)
-                # if shot_node.properties.order != index:
-                shot_node.order = index
-                shot_node.update()
+                shot_node.order = index + 1
+                pillar.call(shot_node.update)
                 print('{0} - updating {1}'.format(shot_node.order, shot_node.name))
                 strip.atc_order = index
-                index += 1
             except ResourceNotFound:
                 # Reset the attract properties for any shot not found on the server
                 # print("Error: shot {0} not found".format(strip.atc_object_id))
