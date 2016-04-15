@@ -36,6 +36,8 @@
 #     "support": "TESTING"
 # }
 
+import functools
+
 if "bpy" in locals():
     import importlib
 
@@ -44,13 +46,10 @@ else:
     from . import draw
 
 import bpy
-from pillarsdk.api import Api
 from pillarsdk.nodes import Node
 from pillarsdk.projects import Project
-from pillarsdk import utils
 from pillarsdk.exceptions import ResourceNotFound
 
-from bpy.props import StringProperty
 from bpy.types import Operator, Panel, AddonPreferences
 
 
@@ -95,8 +94,11 @@ class ToolsPanel(Panel):
 
             if strip.atc_is_synced:
                 layout.operator('attract.shot_submit_update')
-                layout.operator('attract.shot_delete')
-                layout.operator('attract.strip_unlink')
+
+                # Group more dangerous operations.
+                dangerous_sub = layout.column(align=True)
+                dangerous_sub.operator('attract.shot_delete')
+                dangerous_sub.operator('attract.strip_unlink')
 
         elif strip and strip.type in strip_types:
             layout.operator('attract.shot_submit_new')
@@ -113,15 +115,23 @@ class AttractOperatorMixin:
         self.report({'ERROR'}, 'Your Blender Cloud project is not set up for Attract.')
         return {'CANCELLED'}
 
+    @functools.lru_cache()
+    def find_project(self, project_uuid: str) -> Project:
+        """Finds a single project.
+
+        Caches the result in memory to prevent more than one call to Pillar.
+        """
+
+        from .. import pillar
+
+        project = pillar.call(Project.find_one, {'where': {'_id': project_uuid}})
+        return project
+
     def find_node_type(self, node_type_name: str) -> dict:
         from .. import pillar, blender
 
         prefs = blender.preferences()
-
-        project = pillar.call(Project.find_one, {
-            'where': {'_id': prefs.project_uuid},
-            'projection': {'node_types': {'$elemMatch': {'name': node_type_name}}}
-        })
+        project = self.find_project(prefs.project_uuid)
 
         # FIXME: Eve doesn't seem to handle the $elemMatch projection properly,
         # even though it works fine in MongoDB itself. As a result, we have to
@@ -146,7 +156,6 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
 
     def execute(self, context):
         from .. import pillar, blender
-        import blender_id
 
         strip = active_strip(context)
         if strip.atc_object_id:
@@ -157,6 +166,12 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
             return node_type
 
         # Define the shot properties
+        user_uuid = pillar.pillar_user_uuid()
+        if not user_uuid:
+            self.report({'ERROR'}, 'Your Blender Cloud user ID is not known, '
+                                   'update your credentials.')
+            return {'CANCELLED'}
+
         prop = {'name': strip.name,
                 'description': '',
                 'properties': {'status': 'on_hold',
@@ -166,7 +181,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
                 'order': 0,
                 'node_type': 'shot',
                 'project': blender.preferences().project_uuid,
-                'user': blender_id.get_active_user_id()}
+                'user': user_uuid}
 
         # Create a Node item with the attract API
         node = Node(prop)
@@ -183,6 +198,8 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
         strip.atc_cut_in = node['properties']['cut_in']
         strip.atc_cut_out = node['properties']['cut_out']
 
+        draw.tag_redraw_all_sequencer_editors()
+
         return {'FINISHED'}
 
 
@@ -198,7 +215,7 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
         try:
             node = pillar.call(Node.find, self.strip_atc_object_id)
         except ResourceNotFound:
-            self.report({'ERROR'}, 'Shot %r not found on the server, unable to relink.'
+            self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
                         % self.strip_atc_object_id)
             return {'CANCELLED'}
 
@@ -210,6 +227,8 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
         strip.atc_description = node.description
 
         self.report({'INFO'}, "Shot {0} relinked".format(node.name))
+        draw.tag_redraw_all_sequencer_editors()
+
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -227,18 +246,22 @@ class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
     bl_description = 'Syncronizes local and remote changes'
 
     def execute(self, context):
+        from .. import pillar
+
         strip = active_strip(context)
         # Update cut_in and cut_out properties on the strip
         # strip.atc_cut_in = strip.frame_offset_start
         # strip.atc_cut_out = strip.frame_offset_start + strip.frame_final_duration
         # print("Query Attract server with {0}".format(strip.atc_object_id))
         strip.atc_cut_out = strip.atc_cut_in + strip.frame_final_duration - 1
-        node = Node.find(strip.atc_object_id)
+        node = pillar.call(Node.find, strip.atc_object_id)
         node.name = strip.atc_name
         node.description = strip.atc_description
         node.properties.cut_in = strip.atc_cut_in
         node.properties.cut_out = strip.atc_cut_out
-        node.update()
+        pillar.call(node.update)
+
+        self.report({'INFO'}, 'Shot was updated on Attract')
         return {'FINISHED'}
 
 
@@ -248,10 +271,16 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
     bl_description = 'Remove from Attract'
 
     def execute(self, context):
+        from .. import pillar
+
         strip = active_strip(context)
-        node = Node.find(strip.atc_object_id)
-        if node.delete():
-            remove_atc_props(strip)
+        node = pillar.call(Node.find, strip.atc_object_id)
+        if not pillar.call(node.delete):
+            print('Unable to delete the strip node on Attract.')
+            return {'CANCELLED'}
+
+        remove_atc_props(strip)
+        draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
 
 
@@ -262,7 +291,14 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
 
     def execute(self, context):
         strip = active_strip(context)
+
+        atc_object_id = getattr(strip, 'atc_object_id')
         remove_atc_props(strip)
+
+        if atc_object_id:
+            self.report({'INFO'}, 'Shot %s has been unlinked from Attract.' % atc_object_id)
+
+        draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
 
 
@@ -328,6 +364,7 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
                 # print("Error: shot {0} not found".format(strip.atc_object_id))
                 remove_atc_props(strip)
 
+        draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
 
 

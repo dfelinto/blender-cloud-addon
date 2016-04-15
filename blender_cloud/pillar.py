@@ -146,6 +146,13 @@ def blender_id_subclient() -> dict:
     return subclient
 
 
+def pillar_user_uuid() -> str:
+    """Returns the UUID of the Pillar user."""
+
+    import blender_id
+    return blender_id.get_subclient_user_id(SUBCLIENT_ID)
+
+
 def pillar_api(pillar_endpoint: str = None, caching=True) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
