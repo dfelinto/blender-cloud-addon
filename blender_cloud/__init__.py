@@ -23,7 +23,7 @@ bl_info = {
     "author": "Sybren A. Stüvel and Francesco Siddi",
     "version": (0, 2, 0),
     "blender": (2, 77, 0),
-    "location": "TO BE DETERMINED",
+    "location": "Ctrl+Shift+Alt+A anywhere",
     "description": "Allows downloading of textures from the Blender Cloud. Requires "
                    "the Blender ID addon.",
     "wiki_url": "http://wiki.blender.org/index.php/Extensions:2.6/Py/"
