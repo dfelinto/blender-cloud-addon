@@ -19,17 +19,17 @@
 # <pep8 compliant>
 
 bl_info = {
-    "name": "Blender Cloud Texture Browser",
-    "author": "Sybren A. Stüvel and Francesco Siddi",
-    "version": (0, 2, 0),
-    "blender": (2, 77, 0),
-    "location": "Ctrl+Shift+Alt+A anywhere",
-    "description": "Allows downloading of textures from the Blender Cloud. Requires "
-                   "the Blender ID addon.",
-    "wiki_url": "http://wiki.blender.org/index.php/Extensions:2.6/Py/"
-                "Scripts/System/BlenderCloud",
-    "category": "System",
-    "support": "TESTING"
+    'name': 'Blender Cloud Texture Browser',
+    'author': 'Sybren A. Stüvel and Francesco Siddi',
+    'version': (0, 2, 0),
+    'blender': (2, 77, 0),
+    'location': 'Ctrl+Shift+Alt+A anywhere',
+    'description': 'Allows downloading of textures from the Blender Cloud. Requires '
+                   'the Blender ID addon and Blender 2.77a or newer.',
+    'wiki_url': 'http://wiki.blender.org/index.php/Extensions:2.6/Py/'
+                'Scripts/System/BlenderCloud',
+    'category': 'System',
+    'support': 'TESTING'
 }
 
 import logging

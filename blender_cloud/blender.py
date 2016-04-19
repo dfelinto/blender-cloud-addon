@@ -18,17 +18,21 @@ log = logging.getLogger(__name__)
 class BlenderCloudPreferences(AddonPreferences):
     bl_idname = ADDON_NAME
 
+    # The following two properties are read-only to limit the scope of the
+    # addon and allow for proper testing within this scope.
     pillar_server = bpy.props.StringProperty(
         name='Blender Cloud Server',
         description='URL of the Blender Cloud backend server',
-        default='https://cloudapi.blender.org/'
+        default='https://cloudapi.blender.org/',
+        get=lambda self: 'https://cloudapi.blender.org/'
     )
 
     # TODO: Move to the Scene properties?
     project_uuid = bpy.props.StringProperty(
         name='Project UUID',
         description='UUID of the current Blender Cloud project',
-        default='5703957698377322577be77d'  # TODO: change default to something more generic
+        default='5672beecc0261b2005ed1a33',
+        get=lambda self: '5672beecc0261b2005ed1a33'
     )
 
     local_texture_dir = StringProperty(
@@ -80,8 +84,11 @@ class BlenderCloudPreferences(AddonPreferences):
         # options for Pillar
         sub = layout.column()
         sub.enabled = blender_id_icon != 'ERROR'
-        sub.prop(self, "pillar_server")
-        sub.prop(self, "project_uuid")
+
+        # TODO: let users easily pick a project. For now, we just use the
+        # hard-coded server URL and UUID of the textures project.
+        # sub.prop(self, "pillar_server")
+        # sub.prop(self, "project_uuid")
         sub.operator("pillar.credentials_update")
 
 
