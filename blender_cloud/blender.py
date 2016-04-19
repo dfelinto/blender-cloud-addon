@@ -119,7 +119,7 @@ class PillarCredentialsUpdate(Operator):
         try:
             blender_id.create_subclient_token(pillar.SUBCLIENT_ID, endpoint)
         except blender_id.BlenderIdCommError as ex:
-            log.exception('Error sending subclient-specific token to Blender')
+            log.exception('Error sending subclient-specific token to Blender ID')
             self.report({'ERROR'}, 'Failed to sync Blender ID to %s' % endpoint)
             return {'CANCELLED'}
 
@@ -130,10 +130,10 @@ class PillarCredentialsUpdate(Operator):
             loop.run_until_complete(pillar.get_project_uuid('textures'))  # Any query will do.
         except Exception as ex:
             log.exception('Error in test call to Pillar')
-            self.report({'ERROR'}, 'Failed connection to %s' % endpoint)
+            self.report({'ERROR'}, 'Failed test connection to %s' % endpoint)
             return {'CANCELLED'}
 
-        self.report({'INFO'}, 'Updated cloud server address to %s' % endpoint)
+        self.report({'INFO'}, 'Blender Cloud credentials & endpoint URL updated.')
         return {'FINISHED'}
 
 
