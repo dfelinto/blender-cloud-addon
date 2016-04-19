@@ -34,6 +34,7 @@ bl_info = {
 
 import logging
 
+# TODO: remove this, as global logging configuration should not happen per addon.
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)8s %(name)s %(message)s')
 logging.getLogger('cachecontrol').setLevel(logging.DEBUG)
