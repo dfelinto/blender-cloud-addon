@@ -38,4 +38,4 @@ def load_wheel(module_name, fname_prefix):
 def load_wheels():
     load_wheel('lockfile', 'lockfile')
     load_wheel('cachecontrol', 'CacheControl')
-    load_wheel('pillarsdk', 'pillar_sdk')
+    load_wheel('pillarsdk', 'pillarsdk')

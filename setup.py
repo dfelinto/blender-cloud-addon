@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import re
 import pathlib
-from glob import glob
 
 from distutils import log
 from distutils.core import Command
@@ -16,6 +15,15 @@ from setuptools import setup, find_packages
 requirement_re = re.compile('[><=]+')
 
 
+def set_default_path(var, default):
+    """convert CLI-arguments (string) to Paths"""
+
+    if var is None:
+        return default
+    return pathlib.Path(var)
+
+
+# noinspection PyAttributeOutsideInit
 class BuildWheels(Command):
     """Builds or downloads the dependencies as wheel files."""
 
@@ -23,31 +31,22 @@ class BuildWheels(Command):
     user_options = [
         ('wheels-path=', None, "wheel file installation path"),
         ('deps-path=', None, "path in which dependencies are built"),
-        ('pillar-sdk-path=', None, "subdir of deps-path containing the Pillar Python SDK"),
         ('cachecontrol-path=', None, "subdir of deps-path containing CacheControl"),
     ]
 
     def initialize_options(self):
         self.wheels_path = None  # path that will contain the installed wheels.
         self.deps_path = None  # path in which dependencies are built.
-        self.pillar_sdk_path = None  # subdir of deps_path containing the Pillar Python SDK
         self.cachecontrol_path = None  # subdir of deps_path containing CacheControl
 
     def finalize_options(self):
         self.my_path = pathlib.Path(__file__).resolve().parent
         package_path = self.my_path / self.distribution.get_name()
 
-        def set_default(var, default):
-            if var is None:
-                return default
-            return pathlib.Path(var)  # convert CLI-arguments (string) to Paths.
-
-        self.wheels_path = set_default(self.wheels_path, package_path / 'wheels')
-        self.deps_path = set_default(self.deps_path, self.my_path / 'build/deps')
-        self.pillar_sdk_path = set_default(self.pillar_sdk_path,
-                                           self.deps_path / 'pillar-python-sdk')
-        self.cachecontrol_path = set_default(self.cachecontrol_path,
-                                             self.deps_path / 'cachecontrol')
+        self.wheels_path = set_default_path(self.wheels_path, package_path / 'wheels')
+        self.deps_path = set_default_path(self.deps_path, self.my_path / 'build/deps')
+        self.cachecontrol_path = set_default_path(self.cachecontrol_path,
+                                                  self.deps_path / 'cachecontrol')
 
     def run(self):
         log.info('Storing wheels in %s', self.wheels_path)
@@ -73,16 +72,12 @@ class BuildWheels(Command):
         # Download lockfile, as there is a suitable wheel on pypi.
         if not list(self.wheels_path.glob('lockfile*.whl')):
             log.info('Downloading lockfile wheel')
-            subprocess.check_call([
-                'pip', 'download', '--dest', str(self.wheels_path), requirements['lockfile'][0]
-            ])
+            self.download_wheel(requirements['lockfile'])
 
-        # Build Pillar Python SDK.
-        if not list(self.wheels_path.glob('pillar-python-sdk*.whl')):
-            log.info('Building Pillar Python SDK in %s', self.pillar_sdk_path)
-            self.git_clone(self.pillar_sdk_path,
-                           'https://github.com/armadillica/pillar-python-sdk.git')
-            self.build_copy_wheel(self.pillar_sdk_path)
+        # Download Pillar Python SDK from pypi.
+        if not list(self.wheels_path.glob('pillarsdk*.whl')):
+            log.info('Downloading Pillar Python SDK wheel')
+            self.download_wheel(requirements['pillarsdk'])
 
         # Build CacheControl.
         if not list(self.wheels_path.glob('CacheControl*.whl')):
@@ -96,6 +91,16 @@ class BuildWheels(Command):
         self.distribution.data_files.append(
             ('blender_cloud/wheels', (str(p) for p in self.wheels_path.glob('*.whl')))
         )
+
+    def download_wheel(self, requirement):
+        """Downloads a wheel from PyPI and saves it in self.wheels_path."""
+
+        subprocess.check_call([
+            'pip', 'download',
+            '--no-deps',
+            '--dest', str(self.wheels_path),
+            requirement[0]
+        ])
 
     def git_clone(self, workdir: pathlib.Path, git_url: str, checkout: str = None):
         if workdir.exists():
@@ -124,6 +129,8 @@ class BuildWheels(Command):
         log.info('copying %s to %s', wheel, self.wheels_path)
         shutil.copy(str(wheel), str(self.wheels_path))
 
+
+# noinspection PyAttributeOutsideInit
 class BlenderAddonBdist(bdist):
     """Ensures that 'python setup.py bdist' creates a zip file."""
 
@@ -137,6 +144,7 @@ class BlenderAddonBdist(bdist):
         super().run()
 
 
+# noinspection PyAttributeOutsideInit
 class BlenderAddonInstall(install):
     """Ensures the module is placed at the root of the zip file."""
 
