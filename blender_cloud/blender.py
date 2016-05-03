@@ -41,6 +41,8 @@ class BlenderCloudPreferences(AddonPreferences):
         default='//textures')
 
     def draw(self, context):
+        import textwrap
+
         layout = self.layout
 
         # Carefully try and import the Blender ID addon
@@ -53,28 +55,31 @@ class BlenderCloudPreferences(AddonPreferences):
             blender_id_profile = blender_id.get_active_profile()
 
         if blender_id is None:
-            blender_id_icon = 'ERROR'
-            blender_id_text = 'This add-on requires Blender ID'
-            blender_id_help = 'Make sure that the Blender ID add-on is installed and activated'
+            icon = 'ERROR'
+            text = 'This add-on requires Blender ID'
+            help_text = 'Make sure that the Blender ID add-on is installed and activated'
         elif not blender_id_profile:
-            blender_id_icon = 'ERROR'
-            blender_id_text = 'You are logged out.'
-            blender_id_help = 'To login, go to the Blender ID add-on preferences.'
-        elif not pillar.SUBCLIENT_ID in blender_id_profile.subclients:
-            blender_id_icon = 'QUESTION'
-            blender_id_text = 'No Blender Cloud credentials.'
-            blender_id_help = ('You are logged in on Blender ID, but your credentials have not '
-                               'been synchronized with Blender Cloud yet. Press the Update '
-                               'Credentials button.')
+            icon = 'ERROR'
+            text = 'You are logged out.'
+            help_text = 'To login, go to the Blender ID add-on preferences.'
+        elif pillar.SUBCLIENT_ID not in blender_id_profile.subclients:
+            icon = 'QUESTION'
+            text = 'No Blender Cloud credentials.'
+            help_text = ('You are logged in on Blender ID, but your credentials have not '
+                         'been synchronized with Blender Cloud yet. Press the Update '
+                         'Credentials button.')
         else:
-            blender_id_icon = 'WORLD_DATA'
-            blender_id_text = 'You are logged in as %s.' % blender_id_profile.username
-            blender_id_help = ('To logout or change profile, '
-                               'go to the Blender ID add-on preferences.')
+            icon = 'WORLD_DATA'
+            text = 'You are logged in as %s.' % blender_id_profile.username
+            help_text = ('To logout or change profile, '
+                         'go to the Blender ID add-on preferences.')
 
-        sub = layout.column()
-        sub.label(text=blender_id_text, icon=blender_id_icon)
-        sub.label(text="* " + blender_id_help)
+        sub = layout.column(align=True)
+        sub.label(text=text, icon=icon)
+
+        help_lines = textwrap.wrap(help_text, 80)
+        for line in help_lines:
+            sub.label(text=line)
 
         sub = layout.column()
         sub.label(text='Local directory for downloaded textures')
@@ -83,7 +88,7 @@ class BlenderCloudPreferences(AddonPreferences):
 
         # options for Pillar
         sub = layout.column()
-        sub.enabled = blender_id_icon != 'ERROR'
+        sub.enabled = icon != 'ERROR'
 
         # TODO: let users easily pick a project. For now, we just use the
         # hard-coded server URL and UUID of the textures project.
