@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import glob
 import sys
 import shutil
 import subprocess
@@ -176,7 +177,8 @@ setup(
     author='Sybren A. Stüvel',
     author_email='sybren@stuvel.eu',
     packages=find_packages('.'),
-    data_files=[('blender_cloud', ['README.md'])],
+    data_files=[('blender_cloud', ['README.md']),
+                ('blender_cloud/icons', glob.glob('blender_cloud/icons/*'))],
     scripts=[],
     url='https://developer.blender.org/diffusion/BCA/',
     license='GNU General Public License v2 or later (GPLv2+)',
