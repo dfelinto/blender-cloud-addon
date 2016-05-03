@@ -32,14 +32,6 @@ bl_info = {
     'support': 'TESTING'
 }
 
-import logging
-
-# TODO: remove this, as global logging configuration should not happen per addon.
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)-15s %(levelname)8s %(name)s %(message)s')
-logging.getLogger('cachecontrol').setLevel(logging.DEBUG)
-logging.getLogger(__name__).setLevel(logging.DEBUG)
-
 # Support reloading
 if 'pillar' in locals():
     import importlib
