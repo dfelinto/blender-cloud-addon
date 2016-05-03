@@ -653,7 +653,7 @@ def menu_draw(self, context):
 
 def register():
     bpy.utils.register_class(BlenderCloudBrowser)
-    bpy.types.INFO_MT_mesh_add.append(menu_draw)
+    # bpy.types.INFO_MT_mesh_add.append(menu_draw)
 
     # handle the keymap
     wm = bpy.context.window_manager
