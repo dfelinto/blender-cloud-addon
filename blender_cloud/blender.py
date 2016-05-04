@@ -11,6 +11,9 @@ from bpy.props import StringProperty
 
 from . import pillar, gui
 
+PILLAR_SERVER_URL = 'https://cloudapi.blender.org/'
+# PILLAR_SERVER_URL = 'http://localhost:5000/'
+
 ADDON_NAME = 'blender_cloud'
 log = logging.getLogger(__name__)
 
@@ -23,8 +26,8 @@ class BlenderCloudPreferences(AddonPreferences):
     pillar_server = bpy.props.StringProperty(
         name='Blender Cloud Server',
         description='URL of the Blender Cloud backend server',
-        default='https://cloudapi.blender.org/',
-        get=lambda self: 'https://cloudapi.blender.org/'
+        default=PILLAR_SERVER_URL,
+        get=lambda self: PILLAR_SERVER_URL
     )
 
     # TODO: Move to the Scene properties?
@@ -125,24 +128,16 @@ class PillarCredentialsUpdate(Operator):
             self.report({'ERROR'}, 'No active profile found')
             return {'CANCELLED'}
 
-        endpoint = preferences().pillar_server.rstrip('/')
-
-        # Create a subclient token and send it to Pillar.
-        try:
-            blender_id.create_subclient_token(pillar.SUBCLIENT_ID, endpoint)
-        except blender_id.BlenderIdCommError as ex:
-            log.exception('Error sending subclient-specific token to Blender ID')
-            self.report({'ERROR'}, 'Failed to sync Blender ID to %s' % endpoint)
-            return {'CANCELLED'}
-
-        # Test the new URL
-        pillar._pillar_api = None
         try:
             loop = asyncio.get_event_loop()
-            loop.run_until_complete(pillar.get_project_uuid('textures'))  # Any query will do.
+            loop.run_until_complete(pillar.refresh_pillar_credentials())
+        except blender_id.BlenderIdCommError as ex:
+            log.exception('Error sending subclient-specific token to Blender ID')
+            self.report({'ERROR'}, 'Failed to sync Blender ID to Blender Cloud')
+            return {'CANCELLED'}
         except Exception as ex:
             log.exception('Error in test call to Pillar')
-            self.report({'ERROR'}, 'Failed test connection to %s' % endpoint)
+            self.report({'ERROR'}, 'Failed test connection to Blender Cloud')
             return {'CANCELLED'}
 
         self.report({'INFO'}, 'Blender Cloud credentials & endpoint URL updated.')

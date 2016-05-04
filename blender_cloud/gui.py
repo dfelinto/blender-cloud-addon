@@ -182,7 +182,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
     _draw_handle = None
 
-    _state = 'BROWSING'
+    _state = 'INITIALIZING'
 
     project_uuid = '5672beecc0261b2005ed1a33'  # Blender Cloud project UUID
     node = None  # The Node object we're currently showing, or None if we're at the project top.
@@ -229,7 +229,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         self.current_display_content = []
         self.loaded_images = set()
-        self.browse_assets()
+        self.check_credentials()
 
         context.window_manager.modal_handler_add(self)
         self.timer = context.window_manager.event_timer_add(1 / 30, context.window)
@@ -284,6 +284,35 @@ class BlenderCloudBrowser(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'RUNNING_MODAL'}
+
+    def check_credentials(self):
+        self._state = 'CHECKING_CREDENTIALS'
+        self.log.debug('Checking credentials')
+        self._new_async_task(self._check_credentials())
+
+    async def _check_credentials(self):
+        """Checks credentials with Pillar, and if ok goes to the BROWSING state."""
+
+        try:
+            await pillar.check_pillar_credentials()
+        except pillar.CredentialsNotSyncedError:
+            self.log.info('Credentials not synced, re-syncing automatically.')
+        else:
+            self.log.info('Credentials okay, browsing assets.')
+            await self.async_download_previews()
+            return
+
+        try:
+            await pillar.refresh_pillar_credentials()
+        except pillar.UserNotLoggedInError:
+            self.error('User not logged in on Blender ID.')
+        else:
+            self.log.info('Credentials refreshed and ok, browsing assets.')
+            await self.async_download_previews()
+            return
+
+        raise pillar.UserNotLoggedInError()
+        # self._new_async_task(self._check_credentials())
 
     def descend_node(self, node):
         """Descends the node hierarchy by visiting this node.
@@ -386,7 +415,10 @@ class BlenderCloudBrowser(bpy.types.Operator):
             else:
                 raise ValueError('Unable to find MenuItem(node_uuid=%r)' % node_uuid)
 
-    async def async_download_previews(self, thumbnails_directory):
+    async def async_download_previews(self):
+        self._state = 'BROWSING'
+
+        thumbnails_directory = self.thumbnails_cache
         self.log.info('Asynchronously downloading previews to %r', thumbnails_directory)
         self.clear_images()
 
@@ -396,7 +428,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
         def thumbnail_loaded(node, file_desc, thumb_path):
             self.update_menu_item(node, file_desc, thumb_path, file_desc['filename'])
 
-        # Download either by group_texture node UUID or by project UUID (which shows all top-level nodes)
+        # Download either by group_texture node UUID or by project UUID (which
+        # shows all top-level nodes)
         if self.node_uuid:
             self.log.debug('Getting subnodes for parent node %r', self.node_uuid)
             children = await pillar.get_nodes(parent_node_uuid=self.node_uuid,
@@ -435,9 +468,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
                                           future=self.signalling_future)
 
     def browse_assets(self):
-        self._state = 'BROWSING'
         self.log.debug('Browsing assets at project %r node %r', self.project_uuid, self.node_uuid)
-        self._new_async_task(self.async_download_previews(self.thumbnails_cache))
+        self._new_async_task(self.async_download_previews())
 
     def _new_async_task(self, async_task: asyncio.coroutine, future: asyncio.Future=None):
         """Stops the currently running async task, and starts another one."""
@@ -457,6 +489,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         """Draws the GUI with OpenGL."""
 
         drawers = {
+            'CHECKING_CREDENTIALS': self._draw_checking_credentials,
             'BROWSING': self._draw_browser,
             'DOWNLOADING_TEXTURE': self._draw_downloading,
             'EXCEPTION': self._draw_exception,
@@ -531,14 +564,24 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def _draw_downloading(self, context):
         """OpenGL drawing code for the DOWNLOADING_TEXTURE state."""
 
-        content_height, content_width = self._window_size(context)
+        self._draw_text_on_colour(context,
+                                  'Downloading texture from Blender Cloud',
+                                  (0.0, 0.0, 0.2, 0.6))
 
+    def _draw_checking_credentials(self, context):
+        """OpenGL drawing code for the CHECKING_CREDENTIALS state."""
+
+        self._draw_text_on_colour(context,
+                                  'Checking login credentials',
+                                  (0.0, 0.0, 0.2, 0.6))
+
+    def _draw_text_on_colour(self, context, text, bgcolour):
+        content_height, content_width = self._window_size(context)
         bgl.glEnable(bgl.GL_BLEND)
-        bgl.glColor4f(0.0, 0.0, 0.2, 0.6)
+        bgl.glColor4f(*bgcolour)
         bgl.glRectf(0, 0, content_width, content_height)
 
         font_id = 0
-        text = "Downloading texture from Blender Cloud"
         bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
         blf.size(font_id, 20, 72)
         text_width, text_height = blf.dimensions(font_id, text)

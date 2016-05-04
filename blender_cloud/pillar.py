@@ -34,6 +34,13 @@ class UserNotLoggedInError(RuntimeError):
         return 'UserNotLoggedInError'
 
 
+class CredentialsNotSyncedError(UserNotLoggedInError):
+    """Raised when the user may be logged in on Blender ID, but has no Blender Cloud token."""
+
+    def __str__(self):
+        return 'CredentialsNotSyncedError'
+
+
 class PillarError(RuntimeError):
     """Raised when there is some issue with the communication with Pillar.
 
@@ -118,7 +125,7 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
 
     subclient = profile.subclients.get(SUBCLIENT_ID)
     if not subclient:
-        raise UserNotLoggedInError()
+        raise CredentialsNotSyncedError()
 
     if _pillar_api is None:
         # Allow overriding the endpoint before importing Blender-specific stuff.
@@ -130,7 +137,7 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
 
         _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
                                     username=subclient['subclient_user_id'],
-                                    password=None,
+                                    password=SUBCLIENT_ID,
                                     token=subclient['token'])
 
     return _pillar_api
@@ -146,6 +153,51 @@ async def pillar_call(pillar_func, *args, **kwargs):
 
     async with pillar_semaphore:
         return await loop.run_in_executor(None, partial)
+
+
+async def check_pillar_credentials():
+    """Tries to obtain the user at Pillar using the user's credentials.
+
+    :raises UserNotLoggedInError: when the user is not logged in on Blender ID.
+    :raises CredentialsNotSyncedError: when the user is logged in on Blender ID but
+        doesn't have a valid subclient token for Pillar.
+    """
+
+    profile = blender_id_profile()
+    if not profile:
+        raise UserNotLoggedInError()
+
+    subclient = profile.subclients.get(SUBCLIENT_ID)
+    if not subclient:
+        raise CredentialsNotSyncedError()
+
+    try:
+        await get_project_uuid('textures')  # Any query will do.
+    except pillarsdk.UnauthorizedAccess:
+        raise CredentialsNotSyncedError()
+
+
+async def refresh_pillar_credentials():
+    """Refreshes the authentication token on Pillar.
+
+    :raises blender_id.BlenderIdCommError: when Blender ID refuses to send a token to Pillar.
+    :raises Exception: when the Pillar credential check fails.
+    """
+
+    global _pillar_api
+
+    import blender_id
+
+    from . import blender
+    pillar_endpoint = blender.preferences().pillar_server.rstrip('/')
+
+    # Create a subclient token and send it to Pillar.
+    # May raise a blender_id.BlenderIdCommError
+    blender_id.create_subclient_token(SUBCLIENT_ID, pillar_endpoint)
+
+    # Test the new URL
+    _pillar_api = None
+    await get_project_uuid('textures')  # Any query will do.
 
 
 async def get_project_uuid(project_url: str) -> str:
