@@ -100,12 +100,6 @@ def blender_id_profile() -> 'blender_id.BlenderIdProfile':
     return blender_id.get_active_profile()
 
 
-def pillar_user_uuid() -> str:
-    """Returns the UUID of the user."""
-
-    call(pillarsdk.User, {''})
-
-
 def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
