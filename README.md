@@ -19,6 +19,26 @@ This addon is a *proof of concept* demonstrating the following features:
 
 {F299745}
 
+Installing the addon
+--------------------
+
+* If you don't have one already, sign up for an account at
+  the [Blender ID site](https://www.blender.org/id/).
+* Install and log in with the
+  [Blender ID addon](https://developer.blender.org/diffusion/BIA/).
+* Install the Blender Cloud addon in Blender (User Preferences →
+  Addons → Install from file...) by pointing it to
+  `blender_cloud*.addon.zip`.
+* Enable the addon in User Preferences → Addons → System.
+
+Running the addon
+-----------------
+
+After installing the Blender Cloud addon, press Ctrl+Alt+Shift+A to
+activate it (yes, this needs work). Downloaded textures are loaded into
+image datablocks. The download location can be configured in the addon
+preferences.
+
 
 Building an installable ZIP file
 --------------------------------
@@ -39,38 +59,6 @@ These dependencies should either be installed somewhere where Blender
 can find them, or be bundled as wheel files in `blender_cloud/wheels`.
 The `python setup.py bdist` command gathers the dependencies and bundles
 them as wheel files.
-
-Installing the addon
---------------------
-
-* To build the addon, run `python setup.py bdist` as described above.
-* If you don't have one already, sign up for an account at
-  the [Blender ID site](https://www.blender.org/id/).
-* As a final step, install and log in with the
-  [Blender ID addon](https://developer.blender.org/diffusion/BIA/).
-* Install the Blender Cloud addon in Blender (User Preferences →
-  Addons → Install from file...) by pointing it to
-  `dist/blender_cloud*.addon.zip`.
-* Enable the addon in User Preferences → Addons → System.
-
-NOTE: The addon requires HTTPS connections, and thus is dependent on
-[D1845](https://developer.blender.org/D1845). You can do either of
-these:
-
-* Build Blender yourself
-* Get a recent copy from the buildbot
-* Copy certificate authority certificate PEM file to
-  `blender/2.77/python/lib/python3.5/site-packages/requests/cacert.pem`.
-  You can use the same file from your local requests installation, or
-  use `/etc/ssl/certs/ca-certificates.crt`.
-
-Running the addon
------------------
-
-After installing the Blender Cloud addon, press Ctrl+Alt+Shift+A to
-activate it (yes, this needs work). Downloaded textures are loaded into
-image datablocks. The download location can be configured in the addon
-preferences.
 
 
 Design
