@@ -1,7 +1,7 @@
 # Primary requirements:
 CacheControl==0.11.6
 lockfile==0.12.2
-pillarsdk==0.1.1
+pillarsdk==1.0.0
 wheel==0.29.0
 
 # Secondary requirements:
