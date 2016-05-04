@@ -208,6 +208,12 @@ class BlenderCloudBrowser(bpy.types.Operator):
     mouse_y = 0
 
     def invoke(self, context, event):
+        # Refuse to start if the file hasn't been saved.
+        if not context.blend_data.is_saved:
+            self.report({'ERROR'}, 'Please save your Blend file before using '
+                                   'the Blender Cloud addon.')
+            return {'CANCELLED'}
+
         wm = context.window_manager
         self.project_uuid = wm.blender_cloud_project
         self.node_uuid = wm.blender_cloud_node
