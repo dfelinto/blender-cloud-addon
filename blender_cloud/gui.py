@@ -237,6 +237,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.loaded_images = set()
         self.check_credentials()
 
+        context.window.cursor_modal_set('DEFAULT')
         context.window_manager.modal_handler_add(self)
         self.timer = context.window_manager.event_timer_add(1 / 30, context.window)
 
@@ -378,6 +379,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         context.space_data.draw_handler_remove(self._draw_handle, 'WINDOW')
         context.window_manager.event_timer_remove(self.timer)
+        context.window.cursor_modal_restore()
 
         if self.maximized_area:
             bpy.ops.screen.screen_full_area(use_hide_panels=True)
