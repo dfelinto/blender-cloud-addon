@@ -269,24 +269,36 @@ class BlenderCloudBrowser(bpy.types.Operator):
             self.mouse_x = event.mouse_x
             self.mouse_y = event.mouse_y
 
-        if self._state == 'BROWSING' and event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+        left_mouse_release = event.type == 'LEFTMOUSE' and event.value == 'RELEASE'
+        if self._state == 'PLEASE_SUBSCRIBE' and left_mouse_release:
+            self.open_browser_subscribe()
+            self._finish(context)
+            return {'FINISHED'}
+
+        if self._state == 'BROWSING':
             selected = self.get_clicked()
 
-            if selected is None:
-                # No item clicked, ignore it.
-                return {'RUNNING_MODAL'}
-
-            if selected.is_folder:
-                self.descend_node(selected.node)
+            if selected:
+                context.window.cursor_set('HAND')
             else:
-                if selected.file_desc is None:
-                    # This can happen when the thumbnail information isn't loaded yet.
-                    # Just ignore the click for now.
-                    # TODO: think of a way to handle this properly.
-                    return {'RUNNING_MODAL'}
-                self.handle_item_selection(context, selected)
+                context.window.cursor_set('DEFAULT')
 
-        elif event.type in {'RIGHTMOUSE', 'ESC'}:
+            if left_mouse_release:
+                if selected is None:
+                    # No item clicked, ignore it.
+                    return {'RUNNING_MODAL'}
+
+                if selected.is_folder:
+                    self.descend_node(selected.node)
+                else:
+                    if selected.file_desc is None:
+                        # This can happen when the thumbnail information isn't loaded yet.
+                        # Just ignore the click for now.
+                        # TODO: think of a way to handle this properly.
+                        return {'RUNNING_MODAL'}
+                    self.handle_item_selection(context, selected)
+
+        if event.type in {'RIGHTMOUSE', 'ESC'}:
             self._finish(context)
             return {'CANCELLED'}
 
@@ -302,6 +314,10 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         try:
             await pillar.check_pillar_credentials()
+        except pillar.NotSubscribedToCloudError:
+            self.log.info('User not subscribed to Blender Cloud.')
+            self._show_subscribe_screen()
+            return
         except pillar.CredentialsNotSyncedError:
             self.log.info('Credentials not synced, re-syncing automatically.')
         else:
@@ -311,6 +327,10 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         try:
             await pillar.refresh_pillar_credentials()
+        except pillar.NotSubscribedToCloudError:
+            self.log.info('User is not a Blender Cloud subscriber.')
+            self._show_subscribe_screen()
+            return
         except pillar.UserNotLoggedInError:
             self.error('User not logged in on Blender ID.')
         else:
@@ -320,6 +340,12 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         raise pillar.UserNotLoggedInError()
         # self._new_async_task(self._check_credentials())
+
+    def _show_subscribe_screen(self):
+        """Shows the "You need to subscribe" screen."""
+
+        self._state = 'PLEASE_SUBSCRIBE'
+        bpy.context.window.cursor_set('HAND')
 
     def descend_node(self, node):
         """Descends the node hierarchy by visiting this node.
@@ -479,7 +505,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.log.debug('Browsing assets at project %r node %r', self.project_uuid, self.node_uuid)
         self._new_async_task(self.async_download_previews())
 
-    def _new_async_task(self, async_task: asyncio.coroutine, future: asyncio.Future=None):
+    def _new_async_task(self, async_task: asyncio.coroutine, future: asyncio.Future = None):
         """Stops the currently running async task, and starts another one."""
 
         self.log.debug('Setting up a new task %r, so any existing task must be stopped', async_task)
@@ -501,6 +527,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
             'BROWSING': self._draw_browser,
             'DOWNLOADING_TEXTURE': self._draw_downloading,
             'EXCEPTION': self._draw_exception,
+            'PLEASE_SUBSCRIBE': self._draw_subscribe,
         }
 
         if self._state in drawers:
@@ -643,6 +670,11 @@ class BlenderCloudBrowser(bpy.types.Operator):
             blf.draw(font_id, line)
         bgl.glDisable(bgl.GL_BLEND)
 
+    def _draw_subscribe(self, context):
+        self._draw_text_on_colour(context,
+                                  'Click to subscribe to the Blender Cloud',
+                                  (0.0, 0.0, 0.2, 0.6))
+
     def get_clicked(self) -> MenuItem:
 
         for item in self.current_display_content:
@@ -690,6 +722,13 @@ class BlenderCloudBrowser(bpy.types.Operator):
                                                      texture_loaded=texture_downloaded,
                                                      future=signalling_future))
         self.async_task.add_done_callback(texture_download_completed)
+
+    def open_browser_subscribe(self):
+        import webbrowser
+
+        webbrowser.open_new_tab('https://cloud.blender.org/join')
+
+        self.report({'INFO'}, 'We just started a browser for you.')
 
 
 # store keymaps here to access after registration

@@ -31,14 +31,15 @@ class UserNotLoggedInError(RuntimeError):
     """
 
     def __str__(self):
-        return 'UserNotLoggedInError'
+        return self.__class__.__name__
 
 
 class CredentialsNotSyncedError(UserNotLoggedInError):
     """Raised when the user may be logged in on Blender ID, but has no Blender Cloud token."""
 
-    def __str__(self):
-        return 'CredentialsNotSyncedError'
+
+class NotSubscribedToCloudError(UserNotLoggedInError):
+    """Raised when the user may be logged in on Blender ID, but has no Blender Cloud token."""
 
 
 class PillarError(RuntimeError):
@@ -171,10 +172,23 @@ async def check_pillar_credentials():
     if not subclient:
         raise CredentialsNotSyncedError()
 
+    pillar_user_id = subclient['subclient_user_id']
+    if not pillar_user_id:
+        raise CredentialsNotSyncedError()
+
     try:
-        await get_project_uuid('textures')  # Any query will do.
+        db_user = await pillar_call(pillarsdk.User.find, pillar_user_id)
     except pillarsdk.UnauthorizedAccess:
         raise CredentialsNotSyncedError()
+
+    roles = db_user.roles
+    log.debug('User has roles %r', roles)
+    if not roles or not {'subscriber', 'demo'}.intersection(set(roles)):
+        # Delete the subclient info. This forces a re-check later, which can
+        # then pick up on the user's new status.
+        del profile.subclients[SUBCLIENT_ID]
+        profile.save_json()
+        raise NotSubscribedToCloudError()
 
 
 async def refresh_pillar_credentials():
@@ -197,7 +211,7 @@ async def refresh_pillar_credentials():
 
     # Test the new URL
     _pillar_api = None
-    await get_project_uuid('textures')  # Any query will do.
+    await check_pillar_credentials()
 
 
 async def get_project_uuid(project_url: str) -> str:
