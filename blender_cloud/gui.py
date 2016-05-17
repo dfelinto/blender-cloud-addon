@@ -69,9 +69,11 @@ class MenuItem:
     SUPPORTED_NODE_TYPES = {'UP', 'group_texture', 'texture'}
 
     def __init__(self, node, file_desc, thumb_path: str, label_text):
+        self.log = logging.getLogger('%s.MenuItem' % __name__)
         if node['node_type'] not in self.SUPPORTED_NODE_TYPES:
+            self.log.info('Invalid node type in node: %s', node)
             raise TypeError('Node of type %r not supported; supported are %r.' % (
-                node.group_texture, self.SUPPORTED_NODE_TYPES))
+                node['node_type'], self.SUPPORTED_NODE_TYPES))
 
         self.node = node  # pillarsdk.Node, contains 'node_type' key to indicate type
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
@@ -485,6 +487,9 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.log.debug('Iterating over child nodes of %r', self.node_uuid)
         for child in children:
             # print('  - %(_id)s = %(name)s' % child)
+            if child['node_type'] not in MenuItem.SUPPORTED_NODE_TYPES:
+                self.log.debug('Skipping node of type %r', child['node_type'])
+                continue
             self.add_menu_item(child, None, 'FOLDER', child['name'])
 
         # There are only sub-nodes at the project level, no texture nodes,
