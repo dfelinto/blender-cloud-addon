@@ -152,15 +152,16 @@ def register():
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
 
+    addon_prefs = preferences()
+
     WindowManager.blender_cloud_project = StringProperty(
         name="Blender Cloud project UUID",
-        default='5672beecc0261b2005ed1a33')  # TODO: don't hard-code this
+        default=addon_prefs.project_uuid)  # TODO: don't hard-code this
 
     WindowManager.blender_cloud_node = StringProperty(
         name="Blender Cloud node UUID",
         default='')  # empty == top-level of project
 
-    addon_prefs = preferences()
 
     def default_if_empty(scene, context):
         """The scene's local_texture_dir, if empty, reverts to the addon prefs."""
