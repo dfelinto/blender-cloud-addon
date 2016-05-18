@@ -348,7 +348,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
             self._show_subscribe_screen()
             return
         except pillar.UserNotLoggedInError:
-            self.error('User not logged in on Blender ID.')
+            self.log.error('User not logged in on Blender ID.')
         else:
             self.log.info('Credentials refreshed and ok, browsing assets.')
             await self.async_download_previews()

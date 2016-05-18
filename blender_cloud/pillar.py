@@ -179,7 +179,7 @@ async def check_pillar_credentials():
 
     try:
         db_user = await pillar_call(pillarsdk.User.find, pillar_user_id)
-    except pillarsdk.UnauthorizedAccess:
+    except (pillarsdk.UnauthorizedAccess, pillarsdk.ResourceNotFound):
         raise CredentialsNotSyncedError()
 
     roles = db_user.roles
@@ -208,7 +208,11 @@ async def refresh_pillar_credentials():
 
     # Create a subclient token and send it to Pillar.
     # May raise a blender_id.BlenderIdCommError
-    blender_id.create_subclient_token(SUBCLIENT_ID, pillar_endpoint)
+    try:
+        blender_id.create_subclient_token(SUBCLIENT_ID, pillar_endpoint)
+    except blender_id.communication.BlenderIdCommError as ex:
+        log.warning("Unable to create authentication token: %s", ex)
+        raise CredentialsNotSyncedError()
 
     # Test the new URL
     _pillar_api = None
