@@ -272,7 +272,6 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
                        'properties.files': 1,
                        'properties.content_type': 1, 'picture': 1},
         'where': where,
-        'sort': 'properties.order',
         'embed': ['parent']})
 
     return children['_items']

@@ -99,6 +99,12 @@ class MenuItem:
         self._is_folder = (node['node_type'] == 'group_texture' or
                            isinstance(node, SpecialFolderNode))
 
+        # Determine sorting order.
+        # by default, sort all the way at the end and folders first.
+        self._order = 0 if self._is_folder else 10000
+        if node and node.properties and node.properties.order is not None:
+            self._order = node.properties.order
+
         self.thumb_path = thumb_path
 
         # Updated when drawing the image
@@ -106,6 +112,10 @@ class MenuItem:
         self.y = 0
         self.width = 0
         self.height = 0
+
+    def sort_key(self):
+        """Key for sorting lists of MenuItems."""
+        return self._order, self.label_text
 
     @property
     def thumb_path(self) -> str:
@@ -463,6 +473,8 @@ class BlenderCloudBrowser(bpy.types.Operator):
             self.current_display_content.append(menu_item)
             self.loaded_images.add(menu_item.icon.filepath_raw)
 
+        self.sort_menu()
+
         return menu_item
 
     def update_menu_item(self, node, *args) -> MenuItem:
@@ -477,6 +489,18 @@ class BlenderCloudBrowser(bpy.types.Operator):
                     break
             else:
                 raise ValueError('Unable to find MenuItem(node_uuid=%r)' % node_uuid)
+
+        self.sort_menu()
+
+    def sort_menu(self):
+        """Sorts the self.current_display_content list."""
+
+        if not self.current_display_content:
+            return
+
+        with self._menu_item_lock:
+            self.current_display_content.sort(key=MenuItem.sort_key)
+
 
     async def async_download_previews(self):
         self._state = 'BROWSING'
