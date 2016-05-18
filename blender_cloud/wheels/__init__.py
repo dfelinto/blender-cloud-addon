@@ -18,8 +18,9 @@ def load_wheel(module_name, fname_prefix):
 
     try:
         module = __import__(module_name)
-    except ImportError:
-        pass
+    except ImportError as ex:
+        log.debug('Unable to import %s directly, will try wheel: %s',
+                  module_name, ex)
     else:
         log.debug('Was able to load %s from %s, no need to load wheel %s',
                   module_name, module.__file__, fname_prefix)
