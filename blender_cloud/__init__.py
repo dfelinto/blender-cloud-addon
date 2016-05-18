@@ -21,7 +21,7 @@
 bl_info = {
     'name': 'Blender Cloud Texture Browser',
     'author': 'Sybren A. Stüvel and Francesco Siddi',
-    'version': (1, 0, 1),
+    'version': (1, 1, 0),
     'blender': (2, 77, 0),
     'location': 'Ctrl+Shift+Alt+A anywhere',
     'description': 'Allows downloading of textures from the Blender Cloud. Requires '
