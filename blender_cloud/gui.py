@@ -493,13 +493,13 @@ class BlenderCloudBrowser(bpy.types.Operator):
             # Query for sub-nodes of this node.
             self.log.debug('Getting subnodes for parent node %r', node_uuid)
             children = await pillar.get_nodes(parent_node_uuid=node_uuid,
-                                              node_type='group_textures')
+                                              node_type='group_texture')
         elif project_uuid:
             # Query for top-level nodes.
             self.log.debug('Getting subnodes for project node %r', project_uuid)
             children = await pillar.get_nodes(project_uuid=project_uuid,
                                               parent_node_uuid='',
-                                              node_type='group_textures')
+                                              node_type='group_texture')
         else:
             # Query for projects
             self.log.warning("Not node UUID and no project UUID, I can't do anything!")
