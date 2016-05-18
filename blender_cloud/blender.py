@@ -30,14 +30,6 @@ class BlenderCloudPreferences(AddonPreferences):
         get=lambda self: PILLAR_SERVER_URL
     )
 
-    # TODO: Move to the Scene properties?
-    project_uuid = bpy.props.StringProperty(
-        name='Project UUID',
-        description='UUID of the current Blender Cloud project',
-        default='5672beecc0261b2005ed1a33',
-        get=lambda self: '5672beecc0261b2005ed1a33'
-    )
-
     local_texture_dir = StringProperty(
         name='Default Blender Cloud texture storage directory',
         subtype='DIR_PATH',
@@ -154,14 +146,9 @@ def register():
 
     addon_prefs = preferences()
 
-    WindowManager.blender_cloud_project = StringProperty(
-        name="Blender Cloud project UUID",
-        default=addon_prefs.project_uuid)  # TODO: don't hard-code this
-
-    WindowManager.blender_cloud_node = StringProperty(
-        name="Blender Cloud node UUID",
-        default='')  # empty == top-level of project
-
+    WindowManager.last_blender_cloud_location = StringProperty(
+        name="Last Blender Cloud browser location",
+        default="/")
 
     def default_if_empty(scene, context):
         """The scene's local_texture_dir, if empty, reverts to the addon prefs."""

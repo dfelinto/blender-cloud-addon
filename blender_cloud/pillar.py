@@ -63,6 +63,8 @@ class CloudPath(pathlib.PurePosixPath):
     @property
     def project_uuid(self) -> str:
         assert self.parts[0] == '/'
+        if len(self.parts) <= 1:
+            return None
         return self.parts[1]
 
     @property
@@ -72,11 +74,10 @@ class CloudPath(pathlib.PurePosixPath):
 
     @property
     def node_uuid(self) -> str:
-        node_uuids = self.node_uuids
-
-        if not node_uuids:
+        if len(self.parts) <= 2:
             return None
-        return node_uuids[-1]
+
+        return self.parts[-1]
 
 
 @contextmanager
@@ -270,6 +271,21 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
     return children['_items']
 
 
+async def get_texture_projects() -> list:
+    """Returns project dicts that contain textures."""
+
+    try:
+        children = await pillar_call(pillarsdk.Project.all, {
+            'where': {'node_types.name': 'texture'},
+            'sort': 'name',
+        })
+    except pillarsdk.ResourceNotFound as ex:
+        log.warning('Unable to find texture projects: %s', ex)
+        raise PillarError('Unable to find texture projects: %s' % ex)
+
+    return children['_items']
+
+
 async def download_to_file(url, filename, *,
                            header_store: str,
                            chunk_size=100 * 1024,
@@ -381,7 +397,7 @@ async def fetch_thumbnail_info(file: pillarsdk.File, directory: str, desired_siz
         finished.
     """
 
-    thumb_link = await pillar_call(file.thumbnail_file, desired_size)
+    thumb_link = await pillar_call(file.thumbnail, desired_size)
 
     if thumb_link is None:
         raise ValueError("File {} has no thumbnail of size {}"
