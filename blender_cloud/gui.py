@@ -254,7 +254,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         context.window.cursor_modal_set('DEFAULT')
         context.window_manager.modal_handler_add(self)
-        self.timer = context.window_manager.event_timer_add(1 / 30, context.window)
+        self.timer = context.window_manager.event_timer_add(1 / 15, context.window)
 
         return {'RUNNING_MODAL'}
 
