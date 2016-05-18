@@ -488,20 +488,15 @@ class BlenderCloudBrowser(bpy.types.Operator):
         project_uuid = self.current_path.project_uuid
         node_uuid = self.current_path.node_uuid
 
-        # Download either by group_texture node UUID or by project UUID (which
-        # shows all top-level nodes)
         if node_uuid:
+            # Query for sub-nodes of this node.
             self.log.debug('Getting subnodes for parent node %r', node_uuid)
             children = await pillar.get_nodes(parent_node_uuid=node_uuid,
                                               node_type='group_textures')
-
-            # Make sure we can go up again.
-            if self.path_stack:
-                self.add_menu_item(UpNode(), None, 'FOLDER', '.. up ..')
         elif project_uuid:
+            # Query for top-level nodes.
             self.log.debug('Getting subnodes for project node %r', project_uuid)
             children = await pillar.get_nodes(project_uuid, '')
-
         else:
             # Query for projects
             self.log.warning("Not node UUID and no project UUID, I can't do anything!")
@@ -509,6 +504,9 @@ class BlenderCloudBrowser(bpy.types.Operator):
             for proj_dict in children:
                 self.add_menu_item(ProjectNode(proj_dict), None, 'FOLDER', proj_dict['name'])
             return
+
+        # Make sure we can go up again.
+        self.add_menu_item(UpNode(), None, 'FOLDER', '.. up ..')
 
         # Download all child nodes
         self.log.debug('Iterating over child nodes of %r', node_uuid)
