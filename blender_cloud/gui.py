@@ -96,8 +96,8 @@ class MenuItem:
         self.label_text = label_text
         self._thumb_path = ''
         self.icon = None
-        self._is_folder = node['node_type'] == 'group_texture' or \
-                          isinstance(node, SpecialFolderNode)
+        self._is_folder = (node['node_type'] == 'group_texture' or
+                           isinstance(node, SpecialFolderNode))
 
         self.thumb_path = thumb_path
 
@@ -310,6 +310,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
                         # This can happen when the thumbnail information isn't loaded yet.
                         # Just ignore the click for now.
                         # TODO: think of a way to handle this properly.
+                        self.log.debug('Selected item %r has no file_desc', selected)
                         return {'RUNNING_MODAL'}
                     self.handle_item_selection(context, selected)
 
@@ -496,7 +497,9 @@ class BlenderCloudBrowser(bpy.types.Operator):
         elif project_uuid:
             # Query for top-level nodes.
             self.log.debug('Getting subnodes for project node %r', project_uuid)
-            children = await pillar.get_nodes(project_uuid, '')
+            children = await pillar.get_nodes(project_uuid=project_uuid,
+                                              parent_node_uuid='',
+                                              node_type='group_textures')
         else:
             # Query for projects
             self.log.warning("Not node UUID and no project UUID, I can't do anything!")

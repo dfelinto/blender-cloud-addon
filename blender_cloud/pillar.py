@@ -275,10 +275,8 @@ async def get_texture_projects() -> list:
     """Returns project dicts that contain textures."""
 
     try:
-        children = await pillar_call(pillarsdk.Project.all, {
-            'where': {'node_types.name': 'texture'},
-            'sort': 'name',
-        })
+        children = await pillar_call(pillarsdk.Project.all_from_endpoint,
+                                     '/bcloud/texture-libraries')
     except pillarsdk.ResourceNotFound as ex:
         log.warning('Unable to find texture projects: %s', ex)
         raise PillarError('Unable to find texture projects: %s' % ex)
