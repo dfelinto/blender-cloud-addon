@@ -473,8 +473,22 @@ async def download_texture_thumbnail(texture_node, desired_size: str,
 
     loop = asyncio.get_event_loop()
 
-    # Find the File that belongs to this texture node
-    pic_uuid = texture_node['picture']
+    # Find out which file to use for the thumbnail picture.
+    pic_uuid = texture_node.picture
+    if not pic_uuid:
+        # Fall back to the first texture file, if it exists.
+        log.debug('Node %r does not have a picture, falling back to first file.',
+                  texture_node['_id'])
+        files = texture_node.properties and texture_node.properties.files
+        if not files:
+            log.info('Node %r does not have a picture nor files, skipping.', texture_node['_id'])
+            return
+        pic_uuid = files[0].file
+        if not pic_uuid:
+            log.info('Node %r does not have a picture nor files, skipping.', texture_node['_id'])
+            return
+
+    # Load the File that belongs to this texture node's picture.
     loop.call_soon_threadsafe(thumbnail_loading, texture_node, texture_node)
     file_desc = await pillar_call(pillarsdk.File.find, pic_uuid, params={
         'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
