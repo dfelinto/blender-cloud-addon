@@ -542,7 +542,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.add_menu_item(UpNode(), None, 'FOLDER', '.. up ..')
 
         # Download all child nodes
-        self.log.debug('Iterating over child nodes of %r', node_uuid)
+        self.log.debug('Iterating over child nodes of %r', self.current_path)
         for child in children:
             # print('  - %(_id)s = %(name)s' % child)
             if child['node_type'] not in MenuItem.SUPPORTED_NODE_TYPES:
