@@ -204,6 +204,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
     _state = 'INITIALIZING'
 
     current_path = pillar.CloudPath('/')
+    project_name = ''
 
     # This contains a stack of Node objects that lead up to the currently browsed node.
     path_stack = []
@@ -371,14 +372,19 @@ class BlenderCloudBrowser(bpy.types.Operator):
 
         assert isinstance(node, pillarsdk.Node), 'Wrong type %s' % node
 
-        # Going up or down?
         if isinstance(node, UpNode):
+            # Going up.
             self.log.debug('Going up to %r', self.current_path)
             self.current_path = self.current_path.parent
             if self.path_stack:
                 self.path_stack.pop()
+            if not self.path_stack:
+                self.project_name = ''
         else:
             # Going down, keep track of where we were
+            if isinstance(node, ProjectNode):
+                self.project_name = node['name']
+
             self.current_path /= node['_id']
             self.log.debug('Going down to %r', self.current_path)
             self.path_stack.append(node)
@@ -572,7 +578,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
         bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
         blf.size(font_id, 20, 72)
         blf.position(font_id, 5, 5, 0)
-        blf.draw(font_id, self._state)
+        blf.draw(font_id, '%s %s' % (self._state, self.project_name))
         bgl.glDisable(bgl.GL_BLEND)
 
     @staticmethod
@@ -719,12 +725,13 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def handle_item_selection(self, context, item: MenuItem):
         """Called when the user clicks on a menu item that doesn't represent a folder."""
 
+        from pillarsdk.utils import sanitize_filename
+
         self.clear_images()
         self._state = 'DOWNLOADING_TEXTURE'
 
-        project_uuid = self.current_path.project_uuid
-        node_path_components = [node['name'] for node in self.path_stack if node is not None]
-        local_path_components = [project_uuid] + node_path_components
+        node_path_components = (node['name'] for node in self.path_stack if node is not None)
+        local_path_components = [sanitize_filename(comp) for comp in node_path_components]
 
         top_texture_directory = bpy.path.abspath(context.scene.local_texture_dir)
         local_path = os.path.join(top_texture_directory, *local_path_components)
