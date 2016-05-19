@@ -531,7 +531,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
                                               node_type='group_texture')
         else:
             # Query for projects
-            self.log.debug('No node UUID and no project UUID, listing all projects')
+            self.log.debug('No node UUID and no project UUID, listing available projects')
             children = await pillar.get_texture_projects()
             for proj_dict in children:
                 self.add_menu_item(ProjectNode(proj_dict), None, 'FOLDER', proj_dict['name'])
