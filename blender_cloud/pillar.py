@@ -544,8 +544,12 @@ async def download_file_by_uuid(file_uuid,
     save_as_json(file_desc, metadata_file)
 
     root, ext = os.path.splitext(file_desc['filename'])
-    file_path = os.path.join(target_directory,
-                             sanitize_filename('%s-%s%s' % (root, map_type, ext)))
+    if root.endswith(map_type):
+        target_filename = '%s%s' % (root, ext)
+    else:
+        target_filename = '%s-%s%s' % (root, map_type, ext)
+
+    file_path = os.path.join(target_directory, sanitize_filename(target_filename))
     file_url = file_desc['link']
     # log.debug('Texture %r:\n%s', file_uuid, pprint.pformat(file_desc.to_dict()))
     loop.call_soon_threadsafe(file_loading, file_path, file_desc)
