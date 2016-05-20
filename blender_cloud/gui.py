@@ -501,7 +501,6 @@ class BlenderCloudBrowser(bpy.types.Operator):
         with self._menu_item_lock:
             self.current_display_content.sort(key=MenuItem.sort_key)
 
-
     async def async_download_previews(self):
         self._state = 'BROWSING'
 
@@ -532,7 +531,7 @@ class BlenderCloudBrowser(bpy.types.Operator):
                                               node_type='group_texture')
         else:
             # Query for projects
-            self.log.Debug('No node UUID and no project UUID, listing all projects')
+            self.log.debug('No node UUID and no project UUID, listing all projects')
             children = await pillar.get_texture_projects()
             for proj_dict in children:
                 self.add_menu_item(ProjectNode(proj_dict), None, 'FOLDER', proj_dict['name'])
