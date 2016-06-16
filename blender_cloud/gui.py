@@ -27,11 +27,6 @@ import bgl
 import blf
 import os
 
-from bpy.types import AddonPreferences
-from bpy.props import (BoolProperty, EnumProperty,
-                       FloatProperty, FloatVectorProperty,
-                       IntProperty, StringProperty)
-
 import pillarsdk
 from . import async_loop, pillar, cache
 
@@ -205,13 +200,11 @@ class MenuItem:
         return self.x < mouse_x < self.x + self.width and self.y < mouse_y < self.y + self.height
 
 
-class BlenderCloudBrowser(bpy.types.Operator):
+class BlenderCloudBrowser(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
     bl_idname = 'pillar.browser'
     bl_label = 'Blender Cloud Texture Browser'
 
     _draw_handle = None
-
-    _state = 'INITIALIZING'
 
     current_path = pillar.CloudPath('/')
     project_name = ''
@@ -219,8 +212,6 @@ class BlenderCloudBrowser(bpy.types.Operator):
     # This contains a stack of Node objects that lead up to the currently browsed node.
     path_stack = []
 
-    async_task = None  # asyncio task for fetching thumbnails
-    signalling_future = None  # asyncio future for signalling that we want to cancel everything.
     timer = None
     log = logging.getLogger('%s.BlenderCloudBrowser' % __name__)
 
@@ -264,23 +255,14 @@ class BlenderCloudBrowser(bpy.types.Operator):
         self.check_credentials()
 
         context.window.cursor_modal_set('DEFAULT')
-        context.window_manager.modal_handler_add(self)
-        self.timer = context.window_manager.event_timer_add(1 / 15, context.window)
+        async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
-        task = self.async_task
-        if self._state != 'EXCEPTION' and task.done() and not task.cancelled():
-            ex = task.exception()
-            if ex is not None:
-                self._state = 'EXCEPTION'
-                self.log.error('Exception while running task: %s', ex)
-                return {'RUNNING_MODAL'}
-
-        if self._state == 'QUIT':
-            self._finish(context)
-            return {'FINISHED'}
+        result = async_loop.AsyncModalOperatorMixin.modal(self, context, event)
+        if not {'PASS_THROUGH', 'RUNNING_MODAL'}.intersection(result):
+            return result
 
         if event.type == 'TAB' and event.value == 'RELEASE':
             self.log.info('Ensuring async loop is running')
@@ -407,43 +389,12 @@ class BlenderCloudBrowser(bpy.types.Operator):
             return None
         return self.path_stack[-1]
 
-    def _stop_async_task(self):
-        self.log.debug('Stopping async task')
-        if self.async_task is None:
-            self.log.debug('No async task, trivially stopped')
-            return
-
-        # Signal that we want to stop.
-        self.async_task.cancel()
-        if not self.signalling_future.done():
-            self.log.info("Signalling that we want to cancel anything that's running.")
-            self.signalling_future.cancel()
-
-        # Wait until the asynchronous task is done.
-        if not self.async_task.done():
-            self.log.info("blocking until async task is done.")
-            loop = asyncio.get_event_loop()
-            try:
-                loop.run_until_complete(self.async_task)
-            except asyncio.CancelledError:
-                self.log.info('Asynchronous task was cancelled')
-                return
-
-        # noinspection PyBroadException
-        try:
-            self.async_task.result()  # This re-raises any exception of the task.
-        except asyncio.CancelledError:
-            self.log.info('Asynchronous task was cancelled')
-        except Exception:
-            self.log.exception("Exception from asynchronous task")
-
     def _finish(self, context):
         self.log.debug('Finishing the modal operator')
-        self._stop_async_task()
+        async_loop.AsyncModalOperatorMixin._finish(self, context)
         self.clear_images()
 
         context.space_data.draw_handler_remove(self._draw_handle, 'WINDOW')
-        context.window_manager.event_timer_remove(self.timer)
         context.window.cursor_modal_restore()
 
         if self.maximized_area:
@@ -566,20 +517,6 @@ class BlenderCloudBrowser(bpy.types.Operator):
     def browse_assets(self):
         self.log.debug('Browsing assets at %r', self.current_path)
         self._new_async_task(self.async_download_previews())
-
-    def _new_async_task(self, async_task: asyncio.coroutine, future: asyncio.Future = None):
-        """Stops the currently running async task, and starts another one."""
-
-        self.log.debug('Setting up a new task %r, so any existing task must be stopped', async_task)
-        self._stop_async_task()
-
-        # Download the previews asynchronously.
-        self.signalling_future = future or asyncio.Future()
-        self.async_task = asyncio.ensure_future(async_task)
-        self.log.debug('Created new task %r', self.async_task)
-
-        # Start the async manager so everything happens.
-        async_loop.ensure_async_loop()
 
     def draw_menu(self, context):
         """Draws the GUI with OpenGL."""
