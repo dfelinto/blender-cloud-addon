@@ -4,6 +4,7 @@ import os
 import functools
 import logging
 from contextlib import closing, contextmanager
+import urllib.parse
 import pathlib
 
 import requests
@@ -109,6 +110,21 @@ def blender_id_profile() -> 'blender_id.BlenderIdProfile':
     return blender_id.get_active_profile()
 
 
+def blender_id_subclient() -> dict:
+    """Returns the subclient dict, containing the 'subclient_user_id' and 'token' keys."""
+
+    profile = blender_id_profile()
+    if not profile:
+        raise UserNotLoggedInError()
+
+    subclient = profile.subclients.get(SUBCLIENT_ID)
+    if not subclient:
+        raise CredentialsNotSyncedError()
+
+    return subclient
+
+
+
 def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
@@ -121,13 +137,7 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     global _pillar_api
 
     # Only return the Pillar API object if the user is still logged in.
-    profile = blender_id_profile()
-    if not profile:
-        raise UserNotLoggedInError()
-
-    subclient = profile.subclients.get(SUBCLIENT_ID)
-    if not subclient:
-        raise CredentialsNotSyncedError()
+    subclient = blender_id_subclient()
 
     if _pillar_api is None:
         # Allow overriding the endpoint before importing Blender-specific stuff.
@@ -587,6 +597,47 @@ async def download_texture(texture_node,
                    for file_info in texture_node['properties']['files'])
 
     return await asyncio.gather(*downloaders, return_exceptions=True)
+
+
+async def upload_file(project_id: str, file_path: pathlib.Path, *,
+                      future: asyncio.Future) -> str:
+    """Uploads a file to the Blender Cloud, returning a file document ID."""
+
+    from .blender import PILLAR_SERVER_URL
+
+    loop = asyncio.get_event_loop()
+    url = urllib.parse.urljoin(PILLAR_SERVER_URL, '/storage/stream/%s' % project_id)
+
+    # Upload the file in a different thread.
+    def upload():
+        auth_token = blender_id_subclient()['token']
+
+        with file_path.open(mode='rb') as infile:
+            return uncached_session.post(url,
+                                         files={'file': infile},
+                                         auth=(auth_token, SUBCLIENT_ID))
+
+    # Check for cancellation even before we start our POST request
+    if is_cancelled(future):
+        log.debug('Uploading was cancelled before doing the POST')
+        raise asyncio.CancelledError('Uploading was cancelled')
+
+    log.debug('Performing POST %s', url)
+    response = await loop.run_in_executor(None, upload)
+    log.debug('Status %i from POST %s', response.status_code, url)
+    response.raise_for_status()
+
+    resp = response.json()
+    log.debug('Upload response: %s', resp)
+
+    try:
+        file_id = resp['file_id']
+    except KeyError:
+        log.error('No file ID in upload response: %s', resp)
+        raise PillarError('No file ID in upload response: %s' % resp)
+
+    log.info('Uploaded %s to file ID %s', file_path, file_id)
+    return file_id
 
 
 def is_cancelled(future: asyncio.Future) -> bool:
