@@ -163,6 +163,7 @@ async def check_pillar_credentials():
     :raises UserNotLoggedInError: when the user is not logged in on Blender ID.
     :raises CredentialsNotSyncedError: when the user is logged in on Blender ID but
         doesn't have a valid subclient token for Pillar.
+    :returns: the Pillar User ID of the current user.
     """
 
     profile = blender_id_profile()
@@ -178,7 +179,7 @@ async def check_pillar_credentials():
         raise CredentialsNotSyncedError()
 
     try:
-        db_user = await pillar_call(pillarsdk.User.find, pillar_user_id)
+        db_user = await pillar_call(pillarsdk.User.me)
     except (pillarsdk.UnauthorizedAccess, pillarsdk.ResourceNotFound):
         raise CredentialsNotSyncedError()
 
@@ -190,6 +191,8 @@ async def check_pillar_credentials():
         del profile.subclients[SUBCLIENT_ID]
         profile.save_json()
         raise NotSubscribedToCloudError()
+
+    return pillar_user_id
 
 
 async def refresh_pillar_credentials():
