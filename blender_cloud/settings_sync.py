@@ -1,9 +1,11 @@
 """Synchronizes settings & startup file with the Cloud."""
 import asyncio
 import logging
+import pathlib
+import tempfile
+import shutil
 
 import bpy
-import pathlib
 
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
@@ -169,6 +171,55 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                                    ' settings from the Blender Cloud.')
             return
 
+        self.report({'INFO'}, 'Pulling settings from Blender Cloud')
+
+        with tempfile.TemporaryDirectory(prefix='bcloud-sync') as tempdir:
+            for fname in SETTINGS_FILES_TO_UPLOAD:
+                await self.download_settings_file(fname, tempdir)
+        await self.reload_after_pull()
+
+    async def download_settings_file(self, fname: str, temp_dir: str):
+        config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
+        meta_path = cache.cache_directory('home-project', 'blender-sync')
+
+        self.report({'INFO'}, 'Downloading %s from Cloud' % fname)
+
+        # Get the asset node
+        node_props = {'project': self.home_project_id,
+                      'node_type': 'asset',
+                      'parent': self.sync_group_id,
+                      'name': fname}
+        node = await pillar_call(pillarsdk.Node.find_first, {
+            'where': node_props,
+            'projection': {'_id': 1, 'properties.file': 1}
+        })
+        if node is None:
+            self.report({'WARNING'}, 'Unable to find %s on Blender Cloud' % fname)
+            self.log.warning('Unable to find node on Blender Cloud for %s', fname)
+            return
+
+        # Download the file
+        file_id = node.properties.file
+
+        def file_downloaded(file_path: str, file_desc: pillarsdk.File):
+            # Move the file next to the final location; as it may be on a
+            # different filesystem than the temporary directory, this can
+            # fail, and we don't want to destroy the existing file.
+            local_temp = config_dir / (fname + '~')
+            local_final = config_dir / fname
+
+            self.log.info('Moving %s to %s', file_path, local_temp)
+            shutil.move(str(file_path), str(local_temp))
+            self.log.info('Moving %s to %s', local_temp, local_final)
+            shutil.move(str(local_temp), str(local_final))
+
+        await pillar.download_file_by_uuid(file_id,
+                                           temp_dir,
+                                           str(meta_path),
+                                           file_loaded=file_downloaded,
+                                           future=self.signalling_future)
+
+    async def reload_after_pull(self):
         self.report({'WARNING'}, 'Settings pulled from Blender Cloud, reloading.')
 
         # This call is tricy, as Blender destroys this modal operator's StructRNA.
