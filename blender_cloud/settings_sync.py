@@ -7,8 +7,8 @@ import pathlib
 
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
-from .pillar import pillar_call, check_pillar_credentials, PillarError, upload_file
-from . import async_loop
+from .pillar import pillar_call
+from . import async_loop, pillar
 
 SETTINGS_FILES_TO_UPLOAD = ['bookmarks.txt', 'recent-files.txt', 'userpref.blend', 'startup.blend']
 
@@ -57,8 +57,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
         log.info('Starting synchronisation')
-        self._new_async_task(self.async_execute())
-        self.report({'INFO'}, 'Synchronizing settings with Blender Cloud')
+        self._new_async_task(self.check_credentials(context))
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
@@ -69,11 +68,44 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
 
         return {'PASS_THROUGH'}
 
-    async def async_execute(self):
-        """Entry point of the asynchronous operator."""
+    async def check_credentials(self, context):
+        """Checks credentials with Pillar, and if ok async-executes the operator."""
+
+        self.report({'INFO'}, 'Checking Blender Cloud credentials')
 
         try:
-            self.user_id = await check_pillar_credentials()
+            await pillar.check_pillar_credentials()
+        except pillar.NotSubscribedToCloudError:
+            self.log.warning('Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.report({'INFO'}, 'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            return
+        except pillar.CredentialsNotSyncedError:
+            self.log.info('Credentials not synced, re-syncing automatically.')
+        else:
+            self.log.info('Credentials okay.')
+            await self.async_execute(context)
+            return
+
+        try:
+            await pillar.refresh_pillar_credentials()
+        except pillar.NotSubscribedToCloudError:
+            self.log.warning('Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.report({'INFO'}, 'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            return
+        except pillar.UserNotLoggedInError:
+            self.log.error('User not logged in on Blender ID.')
+        else:
+            self.log.info('Credentials refreshed and ok.')
+            await self.async_execute(context)
+            return
+
+    async def async_execute(self, context):
+        """Entry point of the asynchronous operator."""
+
+        self.report({'INFO'}, 'Synchronizing settings %s with Blender Cloud' % self.action)
+
+        try:
+            self.user_id = await pillar.refresh_pillar_credentials()
             try:
                 self.home_project_id = await get_home_project_id()
             except sdk_exceptions.ForbiddenAccess:
@@ -144,7 +176,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             created_ok = await pillar_call(sync_group.create)
             if not created_ok:
                 log.error('Blender Cloud addon: unable to create sync folder on the Cloud.')
-                raise PillarError('Unable to create sync folder on the Cloud')
+                raise pillar.PillarError('Unable to create sync folder on the Cloud')
 
         return sync_group['_id']
 
@@ -152,8 +184,8 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         """Creates an Asset node and attaches a file document to it."""
 
         # First upload the file...
-        file_id = await upload_file(self.home_project_id, file_path,
-                                    future=self.signalling_future)
+        file_id = await pillar.upload_file(self.home_project_id, file_path,
+                                           future=self.signalling_future)
         # Then attach it to a new node.
         node_props = {'project': self.home_project_id,
                       'node_type': 'asset',
@@ -166,7 +198,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         if not created_ok:
             log.error('Blender Cloud addon: unable to create asset node on the Cloud for file %s.',
                       file_path)
-            raise PillarError('Unable to create asset node on the Cloud for file %s' % file_path)
+            raise pillar.PillarError('Unable to create asset node on the Cloud for file %s' % file_path)
 
         return node
 

@@ -190,7 +190,7 @@ async def check_pillar_credentials():
 
     try:
         db_user = await pillar_call(pillarsdk.User.me)
-    except (pillarsdk.UnauthorizedAccess, pillarsdk.ResourceNotFound):
+    except (pillarsdk.UnauthorizedAccess, pillarsdk.ResourceNotFound, pillarsdk.ForbiddenAccess):
         raise CredentialsNotSyncedError()
 
     roles = db_user.roles
@@ -229,7 +229,7 @@ async def refresh_pillar_credentials():
 
     # Test the new URL
     _pillar_api = None
-    await check_pillar_credentials()
+    return await check_pillar_credentials()
 
 
 async def get_project_uuid(project_url: str) -> str:
