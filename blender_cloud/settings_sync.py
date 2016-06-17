@@ -1,5 +1,10 @@
-"""Synchronizes settings & startup file with the Cloud."""
-import asyncio
+"""Synchronises settings & startup file with the Cloud.
+
+Caching is disabled on many PillarSDK calls, as synchronisation can happen
+rapidly between multiple machines. This means that information can be outdated
+in seconds, rather than the minutes the cache system assumes.
+"""
+
 import logging
 import pathlib
 import tempfile
@@ -10,7 +15,7 @@ import bpy
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
 from .pillar import pillar_call
-from . import async_loop, pillar
+from . import async_loop, pillar, cache
 
 SETTINGS_FILES_TO_UPLOAD = ['bookmarks.txt', 'recent-files.txt', 'userpref.blend', 'startup.blend']
 
@@ -192,7 +197,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         node = await pillar_call(pillarsdk.Node.find_first, {
             'where': node_props,
             'projection': {'_id': 1, 'properties.file': 1}
-        })
+        }, caching=False)
         if node is None:
             self.report({'WARNING'}, 'Unable to find %s on Blender Cloud' % fname)
             self.log.warning('Unable to find node on Blender Cloud for %s', fname)
