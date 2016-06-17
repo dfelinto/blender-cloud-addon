@@ -18,6 +18,12 @@ from .pillar import pillar_call
 from . import async_loop, pillar, cache
 
 SETTINGS_FILES_TO_UPLOAD = ['bookmarks.txt', 'recent-files.txt', 'userpref.blend', 'startup.blend']
+LOCAL_SETTINGS = [
+    'system.dpi',
+    'system.virtual_pixel_mode',
+    'system.compute_device',
+    'filepaths.temporary_directory',
+]
 
 HOME_PROJECT_ENDPOINT = '/bcloud/home-project'
 SYNC_GROUP_NODE_NAME = 'Blender Sync'
@@ -226,12 +232,39 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
 
     async def reload_after_pull(self):
         self.report({'WARNING'}, 'Settings pulled from Blender Cloud, reloading.')
+        from pprint import pprint
+
+        # Remember some settings that should not be overwritten.
+        up = bpy.context.user_preferences
+        remembered = {}
+        for key in LOCAL_SETTINGS:
+            try:
+                value = up.path_resolve(key)
+            except ValueError:
+                # Setting doesn't exist. This can happen, for example Cycles
+                # settings on a build that doesn't have Cycles enabled.
+                continue
+            remembered[key] = value
+        print('REMEMBERED:')
+        pprint(remembered)
 
         # This call is tricy, as Blender destroys this modal operator's StructRNA.
         # However, the Python code keeps running, so we have to be very careful
         # what we do afterwards.
         log.warning('Reloading home files (i.e. userprefs and startup)')
         bpy.ops.wm.read_homefile()
+
+        # Restore those settings again.
+        up = bpy.context.user_preferences
+        for key, value in remembered.items():
+            if '.' in key:
+                last_dot = key.rindex('.')
+                parent, key = key[:last_dot], key[last_dot+1:]
+                set_on = up.path_resolve(parent)
+            else:
+                set_on = up
+            print('RESTORING: %s.%s=%s' % (set_on, key, value))
+            setattr(set_on, key, value)
 
         # The above call stops any running modal operator, so we have to be
         # very careful with our asynchronous loop. Since it didn't stop by
