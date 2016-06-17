@@ -18,7 +18,7 @@ from . import cache
 
 SUBCLIENT_ID = 'PILLAR'
 
-_pillar_api = None  # will become a pillarsdk.Api object.
+_pillar_api = {}  # will become a mapping from bool (cached/non-cached) to pillarsdk.Api objects.
 log = logging.getLogger(__name__)
 uncached_session = requests.session()
 _testing_blender_id_profile = None  # Just for testing, overrides what is returned by blender_id_profile.
@@ -124,14 +124,14 @@ def blender_id_subclient() -> dict:
     return subclient
 
 
-
-def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
+def pillar_api(pillar_endpoint: str = None, caching=True) -> pillarsdk.Api:
     """Returns the Pillar SDK API object for the current user.
 
     The user must be logged in.
 
     :param pillar_endpoint: URL of the Pillar server, for testing purposes. If not specified,
         it will use the addon preferences.
+    :param caching: whether to return a caching or non-caching API
     """
 
     global _pillar_api
@@ -139,28 +139,38 @@ def pillar_api(pillar_endpoint: str = None) -> pillarsdk.Api:
     # Only return the Pillar API object if the user is still logged in.
     subclient = blender_id_subclient()
 
-    if _pillar_api is None:
+    if not _pillar_api:
         # Allow overriding the endpoint before importing Blender-specific stuff.
         if pillar_endpoint is None:
             from . import blender
             pillar_endpoint = blender.preferences().pillar_server
 
-        pillarsdk.Api.requests_session = cache.requests_session()
+        _caching_api = pillarsdk.Api(endpoint=pillar_endpoint,
+                                     username=subclient['subclient_user_id'],
+                                     password=SUBCLIENT_ID,
+                                     token=subclient['token'])
+        _caching_api.requests_session = cache.requests_session()
 
-        _pillar_api = pillarsdk.Api(endpoint=pillar_endpoint,
-                                    username=subclient['subclient_user_id'],
-                                    password=SUBCLIENT_ID,
-                                    token=subclient['token'])
+        _noncaching_api = pillarsdk.Api(endpoint=pillar_endpoint,
+                                        username=subclient['subclient_user_id'],
+                                        password=SUBCLIENT_ID,
+                                        token=subclient['token'])
+        _noncaching_api.requests_session = uncached_session
 
-    return _pillar_api
+        _pillar_api = {
+            True: _caching_api,
+            False: _noncaching_api,
+        }
+
+    return _pillar_api[caching]
 
 
 # No more than this many Pillar calls should be made simultaneously
 pillar_semaphore = asyncio.Semaphore(3)
 
 
-async def pillar_call(pillar_func, *args, **kwargs):
-    partial = functools.partial(pillar_func, *args, api=pillar_api(), **kwargs)
+async def pillar_call(pillar_func, *args, caching=True, **kwargs):
+    partial = functools.partial(pillar_func, *args, api=pillar_api(caching=caching), **kwargs)
     loop = asyncio.get_event_loop()
 
     async with pillar_semaphore:
