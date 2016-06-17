@@ -548,8 +548,8 @@ async def download_file_by_uuid(file_uuid,
                                 metadata_directory: str,
                                 *,
                                 map_type: str = None,
-                                file_loading: callable,
-                                file_loaded: callable,
+                                file_loading: callable = None,
+                                file_loaded: callable = None,
                                 future: asyncio.Future):
     if is_cancelled(future):
         log.debug('download_file_by_uuid(%r) cancelled.', file_uuid)
@@ -567,7 +567,7 @@ async def download_file_by_uuid(file_uuid,
     save_as_json(file_desc, metadata_file)
 
     root, ext = os.path.splitext(file_desc['filename'])
-    if root.endswith(map_type):
+    if map_type is None or root.endswith(map_type):
         target_filename = '%s%s' % (root, ext)
     else:
         target_filename = '%s-%s%s' % (root, map_type, ext)
@@ -575,7 +575,8 @@ async def download_file_by_uuid(file_uuid,
     file_path = os.path.join(target_directory, sanitize_filename(target_filename))
     file_url = file_desc['link']
     # log.debug('Texture %r:\n%s', file_uuid, pprint.pformat(file_desc.to_dict()))
-    loop.call_soon_threadsafe(file_loading, file_path, file_desc)
+    if file_loading is not None:
+        loop.call_soon_threadsafe(file_loading, file_path, file_desc)
 
     # Cached headers are stored in the project space
     header_store = os.path.join(metadata_directory, 'files',
@@ -583,7 +584,8 @@ async def download_file_by_uuid(file_uuid,
 
     await download_to_file(file_url, file_path, header_store=header_store, future=future)
 
-    loop.call_soon_threadsafe(file_loaded, file_path, file_desc)
+    if file_loaded is not None:
+        loop.call_soon_threadsafe(file_loaded, file_path, file_desc)
 
 
 async def download_texture(texture_node,
