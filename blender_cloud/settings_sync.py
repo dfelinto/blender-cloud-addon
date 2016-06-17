@@ -197,7 +197,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         sync_group = await pillar_call(pillarsdk.Node.find_first, {
             'where': node_props,
             'projection': {'_id': 1}
-        })
+        }, caching=False)
 
         if sync_group is None:
             log.debug('Creating new sync group node')
@@ -220,19 +220,33 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         # First upload the file...
         file_id = await pillar.upload_file(self.home_project_id, file_path,
                                            future=self.signalling_future)
-        # Then attach it to a new node.
+        # Then attach it to a node.
         node_props = {'project': self.home_project_id,
                       'node_type': 'asset',
                       'parent': self.sync_group_id,
-                      'name': file_path.name,
-                      'properties': {'file': file_id},
-                      'user': self.user_id}
-        node = pillarsdk.Node.new(node_props)
-        created_ok = await pillar_call(node.create)
-        if not created_ok:
-            log.error('Blender Cloud addon: unable to create asset node on the Cloud for file %s.',
-                      file_path)
-            raise pillar.PillarError('Unable to create asset node on the Cloud for file %s' % file_path)
+                      'name': file_path.name}
+        node = await pillar_call(pillarsdk.Node.find_first, {
+            'where': node_props,
+        }, caching=False)
+
+        if node is None:
+            # We're going to create a new node, so complete it.
+            log.debug('Creating new asset node')
+            node_props['user'] = self.user_id
+            node_props['properties'] = {'file': file_id}
+
+            node = pillarsdk.Node.new(node_props)
+            created_ok = await pillar_call(node.create)
+            if not created_ok:
+                log.error('Blender Cloud addon: unable to create asset node on the Cloud for file %s.', file_path)
+                raise pillar.PillarError('Unable to create asset node on the Cloud for file %s' % file_path.name)
+        else:
+            # Update the existing node.
+            node.properties = {'file': file_id}
+            updated_ok = await pillar_call(node.update)
+            if not updated_ok:
+                log.error('Blender Cloud addon: unable to update asset node on the Cloud for file %s.', file_path)
+                raise pillar.PillarError('Unable to update asset node on the Cloud for file %s' % file_path.name)
 
         return node
 
