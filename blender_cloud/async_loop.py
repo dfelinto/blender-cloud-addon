@@ -87,6 +87,16 @@ def ensure_async_loop():
     log.debug('Result of starting modal operator is %r', result)
 
 
+def erase_async_loop():
+    global _loop_kicking_operator_running
+
+    log.debug('Erasing async loop')
+
+    loop = asyncio.get_event_loop()
+    loop.stop()
+    _loop_kicking_operator_running = False
+
+
 class AsyncLoopModalOperator(bpy.types.Operator):
     bl_idname = 'asyncio.loop'
     bl_label = 'Runs the asyncio main loop'
@@ -114,6 +124,12 @@ class AsyncLoopModalOperator(bpy.types.Operator):
 
     def modal(self, context, event):
         global _loop_kicking_operator_running
+
+        # If _loop_kicking_operator_running is set to False, someone called
+        # erase_async_loop(). This is a signal that we really should stop
+        # running.
+        if not _loop_kicking_operator_running:
+            return {'FINISHED'}
 
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}

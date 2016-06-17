@@ -123,18 +123,29 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                 self._state = 'QUIT'
                 return
 
-            if self.action == 'PUSH':
-                await self.action_push()
-            else:
-                self.report({'ERROR'}, 'Sorry, PULL not implemented yet.')
+            action = {
+                'PUSH': self.action_push,
+                'PULL': self.action_pull,
+            }[self.action]
+            await action(context)
         except Exception as ex:
             self.log.exception('Unexpected exception caught.')
             self.report({'ERROR'}, 'Unexpected error: %s' % ex)
 
-        self._state = 'QUIT'
+        try:
+            self._state = 'QUIT'
+        except ReferenceError:
+            # This happens after the call to bpy.ops.wm.read_homefile() in action_pull().
+            # That call erases the StructRNA of this operator. As a result, it no longer
+            # runs as a modal operator. The currently running Python code is allowed
+            # to finish, though.
+            pass
 
-    async def action_push(self):
+    async def action_push(self, context):
         """Sends files to the Pillar server."""
+
+        self.log.info('Saved user preferences to disk before pushing to cloud.')
+        bpy.ops.wm.save_userpref()
 
         config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
 
@@ -148,6 +159,29 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             await self.attach_file_to_group(path)
 
         self.report({'INFO'}, 'Settings pushed to Blender Cloud.')
+
+    async def action_pull(self, context):
+        """Loads files from the Pillar server."""
+
+        # Refuse to start if the file hasn't been saved.
+        if context.blend_data.is_dirty:
+            self.report({'ERROR'}, 'Please save your Blend file before pulling'
+                                   ' settings from the Blender Cloud.')
+            return
+
+        self.report({'WARNING'}, 'Settings pulled from Blender Cloud, reloading.')
+
+        # This call is tricy, as Blender destroys this modal operator's StructRNA.
+        # However, the Python code keeps running, so we have to be very careful
+        # what we do afterwards.
+        log.warning('Reloading home files (i.e. userprefs and startup)')
+        bpy.ops.wm.read_homefile()
+
+        # The above call stops any running modal operator, so we have to be
+        # very careful with our asynchronous loop. Since it didn't stop by
+        # its own accord (because the current async task is still running),
+        # we need to shut it down forcefully.
+        async_loop.erase_async_loop()
 
     async def find_sync_group_id(self) -> pillarsdk.Node:
         """Finds the group node in which to store sync assets.
