@@ -59,7 +59,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
         log.info('Starting synchronisation')
-        self._new_async_task(self.check_credentials(context))
+        self._new_async_task(self.async_execute(context))
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
@@ -70,36 +70,36 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
 
         return {'PASS_THROUGH'}
 
-    async def check_credentials(self, context):
+    async def check_credentials(self, context) -> bool:
         """Checks credentials with Pillar, and if ok async-executes the operator."""
 
         self.report({'INFO'}, 'Checking Blender Cloud credentials')
 
         try:
-            await pillar.check_pillar_credentials()
+            user_id = await pillar.check_pillar_credentials()
         except pillar.NotSubscribedToCloudError:
             self.log.warning('Please subscribe to the blender cloud at https://cloud.blender.org/join')
             self.report({'INFO'}, 'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            return
+            return None
         except pillar.CredentialsNotSyncedError:
             self.log.info('Credentials not synced, re-syncing automatically.')
         else:
             self.log.info('Credentials okay.')
-            await self.async_execute(context)
-            return
+            return user_id
 
         try:
-            await pillar.refresh_pillar_credentials()
+            user_id = await pillar.refresh_pillar_credentials()
         except pillar.NotSubscribedToCloudError:
             self.log.warning('Please subscribe to the blender cloud at https://cloud.blender.org/join')
             self.report({'INFO'}, 'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            return
+            return None
         except pillar.UserNotLoggedInError:
             self.log.error('User not logged in on Blender ID.')
         else:
             self.log.info('Credentials refreshed and ok.')
-            await self.async_execute(context)
-            return
+            return user_id
+
+        return None
 
     async def async_execute(self, context):
         """Entry point of the asynchronous operator."""
@@ -107,7 +107,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         self.report({'INFO'}, 'Synchronizing settings %s with Blender Cloud' % self.action)
 
         try:
-            self.user_id = await pillar.refresh_pillar_credentials()
+            self.user_id = await self.check_credentials(context)
             try:
                 self.home_project_id = await get_home_project_id()
             except sdk_exceptions.ForbiddenAccess:
