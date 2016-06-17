@@ -226,7 +226,7 @@ class BlenderCloudBrowser(async_loop.AsyncModalOperatorMixin, bpy.types.Operator
 
     def invoke(self, context, event):
         # Refuse to start if the file hasn't been saved.
-        if not context.blend_data.is_saved:
+        if context.blend_data.is_dirty:
             self.report({'ERROR'}, 'Please save your Blend file before using '
                                    'the Blender Cloud addon.')
             return {'CANCELLED'}
