@@ -83,9 +83,13 @@ class BuildWheels(Command):
         # Build CacheControl.
         if not list(self.wheels_path.glob('CacheControl*.whl')):
             log.info('Building CacheControl in %s', self.cachecontrol_path)
+            # self.git_clone(self.cachecontrol_path,
+            #                'https://github.com/ionrock/cachecontrol.git',
+            #                'v%s' % requirements['CacheControl'][1])
+            # FIXME: we need my clone until pull request #125 has been merged & released
             self.git_clone(self.cachecontrol_path,
-                           'https://github.com/ionrock/cachecontrol.git',
-                           'v%s' % requirements['CacheControl'][1])
+                           'https://github.com/sybrenstuvel/cachecontrol.git',
+                           'sybren-filecache-delete-crash-fix')
             self.build_copy_wheel(self.cachecontrol_path)
 
         # Ensure that the wheels are added to the data files.
