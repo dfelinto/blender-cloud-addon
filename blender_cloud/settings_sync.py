@@ -266,7 +266,10 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             print('RESTORING: %s.%s=%s' % (set_on, key, value))
             setattr(set_on, key, value)
 
-        # The above call stops any running modal operator, so we have to be
+        # Save the now-adjusted user settings.
+        bpy.ops.wm.save_userpref()
+
+        # The read_homefile() call stops any running modal operator, so we have to be
         # very careful with our asynchronous loop. Since it didn't stop by
         # its own accord (because the current async task is still running),
         # we need to shut it down forcefully.
