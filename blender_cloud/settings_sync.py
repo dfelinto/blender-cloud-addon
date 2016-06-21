@@ -66,7 +66,15 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         name='action',
         description='Synchronises settings with the Blender Cloud.')
 
+    blender_version = bpy.props.StringProperty(name='blender_version',
+                                               description='Blender version to sync for',
+                                               default='%i.%i' % bpy.app.version[:2])
+
     def invoke(self, context, event):
+        if not self.blender_version:
+            self.report({'ERROR'}, 'No Blender version to sync for was given.')
+            return {'CANCELLED'}
+
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
         log.info('Starting synchronisation')
@@ -89,8 +97,10 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         try:
             user_id = await pillar.check_pillar_credentials()
         except pillar.NotSubscribedToCloudError:
-            self.log.warning('Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            self.report({'INFO'}, 'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.log.warning(
+                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.report({'INFO'},
+                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
             return None
         except pillar.CredentialsNotSyncedError:
             self.log.info('Credentials not synced, re-syncing automatically.')
@@ -101,8 +111,10 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         try:
             user_id = await pillar.refresh_pillar_credentials()
         except pillar.NotSubscribedToCloudError:
-            self.log.warning('Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            self.report({'INFO'}, 'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.log.warning(
+                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.report({'INFO'},
+                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
             return None
         except pillar.UserNotLoggedInError:
             self.log.error('User not logged in on Blender ID.')
@@ -264,7 +276,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         for key, value in remembered.items():
             if '.' in key:
                 last_dot = key.rindex('.')
-                parent, key = key[:last_dot], key[last_dot+1:]
+                parent, key = key[:last_dot], key[last_dot + 1:]
                 set_on = up.path_resolve(parent)
             else:
                 set_on = up
@@ -280,36 +292,80 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         # we need to shut it down forcefully.
         async_loop.erase_async_loop()
 
-    async def find_sync_group_id(self) -> pillarsdk.Node:
+    async def find_or_create_node(self,
+                                  where: dict,
+                                  additional_create_props: dict,
+                                  projection: dict = None) -> (pillarsdk.Node, bool):
+        """Finds a node by the `filter_props`, creates it using the additional props.
+
+        :returns: tuple (node, created), where 'created' is a bool indicating whether
+                  a new node was created, or an exising one is returned.
+        """
+
+        params = {
+            'where': where,
+        }
+        if projection:
+            params['projection'] = projection
+
+        found_node = await pillar_call(pillarsdk.Node.find_first, params, caching=False)
+
+        created = False
+        if found_node is None:
+            log.info('Creating new sync group node')
+
+            # Augment the node properties to form a complete node.
+            node_props = where.copy()
+            node_props.update(additional_create_props)
+
+            found_node = pillarsdk.Node.new(node_props)
+            created_ok = await pillar_call(found_node.create)
+            if not created_ok:
+                log.error('Blender Cloud addon: unable to create node on the Cloud.')
+                raise pillar.PillarError('Unable to create node on the Cloud')
+            created = True
+
+        return found_node, created
+
+    async def find_sync_group_id(self) -> str:
         """Finds the group node in which to store sync assets.
 
         If the group node doesn't exist, it creates it.
         """
 
-        node_props = {'project': self.home_project_id,
-                      'node_type': 'group',
-                      'parent': None,
-                      'name': SYNC_GROUP_NODE_NAME,
-                      'user': self.user_id}
-        sync_group = await pillar_call(pillarsdk.Node.find_first, {
-            'where': node_props,
-            'projection': {'_id': 1}
-        }, caching=False)
+        # Find/create the top-level sync group node.
+        try:
+            sync_group, created = await self.find_or_create_node(
+                where={'project': self.home_project_id,
+                       'node_type': 'group',
+                       'parent': None,
+                       'name': SYNC_GROUP_NODE_NAME,
+                       'user': self.user_id},
+                additional_create_props={
+                    'description': SYNC_GROUP_NODE_DESC,
+                    'properties': {'status': 'published'},
+                },
+                projection={'_id': 1})
+        except pillar.PillarError:
+            raise pillar.PillarError('Unable to create sync folder on the Cloud')
 
-        if sync_group is None:
-            log.debug('Creating new sync group node')
+        # Find/create the sub-group for the requested Blender version
+        try:
+            sub_sync_group, created = await self.find_or_create_node(
+                where={'project': self.home_project_id,
+                       'node_type': 'group',
+                       'parent': sync_group['_id'],
+                       'name': self.blender_version,
+                       'user': self.user_id},
+                additional_create_props={
+                    'description': 'Sync folder for Blender %s' % self.blender_version,
+                    'properties': {'status': 'published'},
+                },
+                projection={'_id': 1})
+        except pillar.PillarError:
+            raise pillar.PillarError('Unable to create sync folder on the Cloud')
 
-            # Augment the node properties to form a complete node.
-            node_props['description'] = SYNC_GROUP_NODE_DESC
-            node_props['properties'] = {'status': 'published'}
-
-            sync_group = pillarsdk.Node.new(node_props)
-            created_ok = await pillar_call(sync_group.create)
-            if not created_ok:
-                log.error('Blender Cloud addon: unable to create sync folder on the Cloud.')
-                raise pillar.PillarError('Unable to create sync folder on the Cloud')
-
-        return sync_group['_id']
+        return sub_sync_group['_id']
 
     async def attach_file_to_group(self, file_path: pathlib.Path) -> pillarsdk.Node:
         """Creates an Asset node and attaches a file document to it."""
@@ -317,33 +373,29 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         # First upload the file...
         file_id = await pillar.upload_file(self.home_project_id, file_path,
                                            future=self.signalling_future)
+
         # Then attach it to a node.
-        node_props = {'project': self.home_project_id,
-                      'node_type': 'asset',
-                      'parent': self.sync_group_id,
-                      'name': file_path.name}
-        node = await pillar_call(pillarsdk.Node.find_first, {
-            'where': node_props,
-        }, caching=False)
+        node, created = await self.find_or_create_node(
+            where={
+                'project': self.home_project_id,
+                'node_type': 'asset',
+                'parent': self.sync_group_id,
+                'name': file_path.name,
+                'user': self.user_id},
+            additional_create_props={
+                'properties': {'file': file_id},
+            })
 
-        if node is None:
-            # We're going to create a new node, so complete it.
-            log.debug('Creating new asset node')
-            node_props['user'] = self.user_id
-            node_props['properties'] = {'file': file_id}
-
-            node = pillarsdk.Node.new(node_props)
-            created_ok = await pillar_call(node.create)
-            if not created_ok:
-                log.error('Blender Cloud addon: unable to create asset node on the Cloud for file %s.', file_path)
-                raise pillar.PillarError('Unable to create asset node on the Cloud for file %s' % file_path.name)
-        else:
+        if not created:
             # Update the existing node.
             node.properties = {'file': file_id}
             updated_ok = await pillar_call(node.update)
             if not updated_ok:
-                log.error('Blender Cloud addon: unable to update asset node on the Cloud for file %s.', file_path)
-                raise pillar.PillarError('Unable to update asset node on the Cloud for file %s' % file_path.name)
+                log.error(
+                    'Blender Cloud addon: unable to update asset node on the Cloud for file %s.',
+                    file_path)
+                raise pillar.PillarError(
+                    'Unable to update asset node on the Cloud for file %s' % file_path.name)
 
         return node
 
