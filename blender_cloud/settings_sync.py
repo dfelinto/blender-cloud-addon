@@ -209,9 +209,6 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             self.log.warning('Unable to find node on Blender Cloud for %s', fname)
             return
 
-        # Download the file
-        file_id = node.properties.file
-
         def file_downloaded(file_path: str, file_desc: pillarsdk.File):
             # Move the file next to the final location; as it may be on a
             # different filesystem than the temporary directory, this can
@@ -219,16 +216,24 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             local_temp = config_dir / (fname + '~')
             local_final = config_dir / fname
 
-            self.log.info('Moving %s to %s', file_path, local_temp)
-            shutil.move(str(file_path), str(local_temp))
-            self.log.info('Moving %s to %s', local_temp, local_final)
-            shutil.move(str(local_temp), str(local_final))
+            # Make a backup copy of the file as it was before pulling.
+            if local_final.exists():
+                local_bak = config_dir / (fname + '-pre-bcloud-pull')
+                self.move_file(local_final, local_bak)
 
+            self.move_file(file_path, local_temp)
+            self.move_file(local_temp, local_final)
+
+        file_id = node.properties.file
         await pillar.download_file_by_uuid(file_id,
                                            temp_dir,
                                            str(meta_path),
                                            file_loaded=file_downloaded,
                                            future=self.signalling_future)
+
+    def move_file(self, src, dst):
+        self.log.info('Moving %s to %s', src, dst)
+        shutil.move(str(src), str(dst))
 
     async def reload_after_pull(self):
         self.report({'WARNING'}, 'Settings pulled from Blender Cloud, reloading.')
