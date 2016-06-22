@@ -74,6 +74,10 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                                                description='Blender version to sync for',
                                                default='%i.%i' % bpy.app.version[:2])
 
+    home_project_id = None
+    sync_group_id = None  # top-level sync group node ID
+    sync_group_versioned_id = None  # sync group node ID for the given Blender version.
+
     def invoke(self, context, event):
         if not self.blender_version:
             self.report({'ERROR'}, 'No Blender version to sync for was given.')
@@ -143,15 +147,22 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                 self._state = 'QUIT'
                 return
 
+            # Only create the folder structure if we're pushing.
+            may_create = self.action == 'PUSH'
             try:
-                self.sync_group_id = await self.find_sync_group_id()
-                self.log.info('Found group node ID: %s', self.sync_group_id)
+                gid, subgid = await self.find_sync_group_id(may_create=may_create)
+                self.sync_group_id = gid
+                self.sync_group_versioned_id = subgid
+                self.log.info('Found top-level group node ID: %s', self.sync_group_id)
+                self.log.info('Found group node ID for %s: %s',
+                              self.blender_version, self.sync_group_versioned_id)
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Unable to find Group ID')
                 self.report({'ERROR'}, 'Unable to find sync folder.')
                 self._state = 'QUIT'
                 return
 
+            # Perform the requested action.
             action = {
                 'PUSH': self.action_push,
                 'PULL': self.action_pull,
@@ -198,6 +209,16 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                                    ' settings from the Blender Cloud.')
             return
 
+        # If the sync group node doesn't exist, offer a list of groups that do.
+        if self.sync_group_id is None:
+            self.report({'ERROR'}, 'There are no synced Blender settings in your home project.')
+            return
+
+        if self.sync_group_versioned_id is None:
+            self.report({'ERROR'}, 'Therre are no synced Blender settings for version %s' %
+                        self.blender_version)
+            return
+
         self.report({'INFO'}, 'Pulling settings from Blender Cloud')
         with tempfile.TemporaryDirectory(prefix='bcloud-sync') as tempdir:
             for fname in SETTINGS_FILES_TO_UPLOAD:
@@ -215,7 +236,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         # Get the asset node
         node_props = {'project': self.home_project_id,
                       'node_type': 'asset',
-                      'parent': self.sync_group_id,
+                      'parent': self.sync_group_versioned_id,
                       'name': fname}
         node = await pillar_call(pillarsdk.Node.find_first, {
             'where': node_props,
@@ -275,7 +296,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
 
             # Map enums from strings (in Python) to ints (in DNA).
             dot_index = python_key.rindex('.')
-            parent_key, prop_key = python_key[:dot_index], python_key[dot_index+1:]
+            parent_key, prop_key = python_key[:dot_index], python_key[dot_index + 1:]
             parent = up.path_resolve(parent_key)
             prop = parent.bl_rna.properties[prop_key]
             if prop.type == 'ENUM':
@@ -301,7 +322,8 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
     async def find_or_create_node(self,
                                   where: dict,
                                   additional_create_props: dict,
-                                  projection: dict = None) -> (pillarsdk.Node, bool):
+                                  projection: dict = None,
+                                  may_create: bool = True) -> (pillarsdk.Node, bool):
         """Finds a node by the `filter_props`, creates it using the additional props.
 
         :returns: tuple (node, created), where 'created' is a bool indicating whether
@@ -318,6 +340,9 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
 
         created = False
         if found_node is None:
+            if not may_create:
+                return None, False
+
             log.info('Creating new sync group node')
 
             # Augment the node properties to form a complete node.
@@ -333,10 +358,10 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
 
         return found_node, created
 
-    async def find_sync_group_id(self) -> str:
+    async def find_sync_group_id(self, may_create=True) -> str:
         """Finds the group node in which to store sync assets.
 
-        If the group node doesn't exist, it creates it.
+        If the group node doesn't exist and may_create=True, it creates it.
         """
 
         # Find/create the top-level sync group node.
@@ -351,9 +376,14 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                     'description': SYNC_GROUP_NODE_DESC,
                     'properties': {'status': 'published'},
                 },
-                projection={'_id': 1})
+                projection={'_id': 1},
+                may_create=may_create)
         except pillar.PillarError:
             raise pillar.PillarError('Unable to create sync folder on the Cloud')
+
+        if not may_create and sync_group is None:
+            log.info("Sync folder doesn't exist, and not creating it either.")
+            return None, None
 
         # Find/create the sub-group for the requested Blender version
         try:
@@ -367,11 +397,17 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                     'description': 'Sync folder for Blender %s' % self.blender_version,
                     'properties': {'status': 'published'},
                 },
-                projection={'_id': 1})
+                projection={'_id': 1},
+                may_create=may_create)
         except pillar.PillarError:
             raise pillar.PillarError('Unable to create sync folder on the Cloud')
 
-        return sub_sync_group['_id']
+        if not may_create and sub_sync_group is None:
+            log.info("Sync folder for Blender version %s doesn't exist, "
+                     "and not creating it either.", self.blender_version)
+            return sync_group['_id'], None
+
+        return sync_group['_id'], sub_sync_group['_id']
 
     async def attach_file_to_group(self, file_path: pathlib.Path) -> pillarsdk.Node:
         """Creates an Asset node and attaches a file document to it."""
@@ -385,7 +421,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             where={
                 'project': self.home_project_id,
                 'node_type': 'asset',
-                'parent': self.sync_group_id,
+                'parent': self.sync_group_versioned_id,
                 'name': file_path.name,
                 'user': self.user_id},
             additional_create_props={
