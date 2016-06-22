@@ -550,6 +550,7 @@ async def download_file_by_uuid(file_uuid,
                                 map_type: str = None,
                                 file_loading: callable = None,
                                 file_loaded: callable = None,
+                                file_loaded_sync: callable = None,
                                 future: asyncio.Future):
     if is_cancelled(future):
         log.debug('download_file_by_uuid(%r) cancelled.', file_uuid)
@@ -586,6 +587,8 @@ async def download_file_by_uuid(file_uuid,
 
     if file_loaded is not None:
         loop.call_soon_threadsafe(file_loaded, file_path, file_desc)
+    if file_loaded_sync is not None:
+        await file_loaded_sync(file_path, file_desc)
 
 
 async def download_texture(texture_node,
