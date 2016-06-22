@@ -15,14 +15,18 @@ import bpy
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
 from .pillar import pillar_call
-from . import async_loop, pillar, cache
+from . import async_loop, pillar, cache, blendfile
 
 SETTINGS_FILES_TO_UPLOAD = ['bookmarks.txt', 'recent-files.txt', 'userpref.blend', 'startup.blend']
-LOCAL_SETTINGS = [
-    'system.dpi',
-    'system.virtual_pixel_mode',
-    'system.compute_device',
-    'filepaths.temporary_directory',
+
+# These are RNA keys inside the userpref.blend file, and their
+# Python properties names.
+LOCAL_SETTINGS_RNA = [
+    (b'dpi', 'system.dpi'),
+    (b'virtual_pixel', 'system.virtual_pixel_mode'),
+    (b'compute_device_id', 'system.compute_device'),
+    (b'compute_device_type', 'system.compute_device_type'),
+    (b'tempdir', 'filepaths.temporary_directory'),
 ]
 
 HOME_PROJECT_ENDPOINT = '/bcloud/home-project'
@@ -195,13 +199,14 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             return
 
         self.report({'INFO'}, 'Pulling settings from Blender Cloud')
-
         with tempfile.TemporaryDirectory(prefix='bcloud-sync') as tempdir:
             for fname in SETTINGS_FILES_TO_UPLOAD:
                 await self.download_settings_file(fname, tempdir)
-        await self.reload_after_pull()
 
-    async def download_settings_file(self, fname: str, temp_dir: str):
+        self.report({'WARNING'}, 'Settings pulled from Cloud, restart Blender to load them.')
+
+    async def download_settings_file(self, fname: str, temp_dir: str
+                                     ):
         config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
         meta_path = cache.cache_directory('home-project', 'blender-sync')
 
@@ -217,11 +222,16 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             'projection': {'_id': 1, 'properties.file': 1}
         }, caching=False)
         if node is None:
-            self.report({'WARNING'}, 'Unable to find %s on Blender Cloud' % fname)
-            self.log.warning('Unable to find node on Blender Cloud for %s', fname)
+            self.report({'INFO'}, 'Unable to find %s on Blender Cloud' % fname)
+            self.log.info('Unable to find node on Blender Cloud for %s', fname)
             return
 
-        def file_downloaded(file_path: str, file_desc: pillarsdk.File):
+        async def file_downloaded(file_path: str, file_desc: pillarsdk.File):
+            # Allow the caller to adjust the file before we move it into place.
+
+            if fname.lower() == 'userpref.blend':
+                await self.update_userpref_blend(file_path)
+
             # Move the file next to the final location; as it may be on a
             # different filesystem than the temporary directory, this can
             # fail, and we don't want to destroy the existing file.
@@ -240,57 +250,53 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         await pillar.download_file_by_uuid(file_id,
                                            temp_dir,
                                            str(meta_path),
-                                           file_loaded=file_downloaded,
+                                           file_loaded_sync=file_downloaded,
                                            future=self.signalling_future)
 
     def move_file(self, src, dst):
         self.log.info('Moving %s to %s', src, dst)
         shutil.move(str(src), str(dst))
 
-    async def reload_after_pull(self):
-        self.report({'WARNING'}, 'Settings pulled from Blender Cloud, reloading.')
-        from pprint import pprint
+    async def update_userpref_blend(self, file_path: str):
+        self.log.info('Overriding machine-local settings in %s', file_path)
 
-        # Remember some settings that should not be overwritten.
+        # Remember some settings that should not be overwritten from the Cloud.
         up = bpy.context.user_preferences
         remembered = {}
-        for key in LOCAL_SETTINGS:
+        for rna_key, python_key in LOCAL_SETTINGS_RNA:
+            assert '.' in python_key, 'Sorry, this code assumes there is a dot in the Python key'
+
             try:
-                value = up.path_resolve(key)
+                value = up.path_resolve(python_key)
             except ValueError:
                 # Setting doesn't exist. This can happen, for example Cycles
                 # settings on a build that doesn't have Cycles enabled.
                 continue
-            remembered[key] = value
-        print('REMEMBERED:')
-        pprint(remembered)
 
-        # This call is tricy, as Blender destroys this modal operator's StructRNA.
-        # However, the Python code keeps running, so we have to be very careful
-        # what we do afterwards.
-        log.warning('Reloading home files (i.e. userprefs and startup)')
-        bpy.ops.wm.read_homefile()
-
-        # Restore those settings again.
-        up = bpy.context.user_preferences
-        for key, value in remembered.items():
-            if '.' in key:
-                last_dot = key.rindex('.')
-                parent, key = key[:last_dot], key[last_dot + 1:]
-                set_on = up.path_resolve(parent)
+            # Map enums from strings (in Python) to ints (in DNA).
+            dot_index = python_key.rindex('.')
+            parent_key, prop_key = python_key[:dot_index], python_key[dot_index+1:]
+            parent = up.path_resolve(parent_key)
+            prop = parent.bl_rna.properties[prop_key]
+            if prop.type == 'ENUM':
+                log.debug('Rewriting %s from %r to %r',
+                          python_key, value, prop.enum_items[value].value)
+                value = prop.enum_items[value].value
             else:
-                set_on = up
-            print('RESTORING: %s.%s=%s' % (set_on, key, value))
-            setattr(set_on, key, value)
+                log.debug('Keeping value of %s: %r', python_key, value)
 
-        # Save the now-adjusted user settings.
-        bpy.ops.wm.save_userpref()
+            remembered[rna_key] = value
+        log.debug('Overriding values: %s', remembered)
 
-        # The read_homefile() call stops any running modal operator, so we have to be
-        # very careful with our asynchronous loop. Since it didn't stop by
-        # its own accord (because the current async task is still running),
-        # we need to shut it down forcefully.
-        async_loop.erase_async_loop()
+        # Rewrite the userprefs.blend file to override the options.
+        with blendfile.open_blend(file_path, 'rb+') as blend:
+            prefs = next(block for block in blend.blocks
+                         if block.code == b'USER')
+
+            for key, value in remembered.items():
+                self.log.debug('prefs[%r] = %r' % (key, prefs[key]))
+                self.log.debug('  -> setting prefs[%r] = %r' % (key, value))
+                prefs[key] = value
 
     async def find_or_create_node(self,
                                   where: dict,
