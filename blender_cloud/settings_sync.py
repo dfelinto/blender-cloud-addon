@@ -172,14 +172,7 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
             self.log.exception('Unexpected exception caught.')
             self.report({'ERROR'}, 'Unexpected error: %s' % ex)
 
-        try:
-            self._state = 'QUIT'
-        except ReferenceError:
-            # This happens after the call to bpy.ops.wm.read_homefile() in action_pull().
-            # That call erases the StructRNA of this operator. As a result, it no longer
-            # runs as a modal operator. The currently running Python code is allowed
-            # to finish, though.
-            pass
+        self._state = 'QUIT'
 
     async def action_push(self, context):
         """Sends files to the Pillar server."""
