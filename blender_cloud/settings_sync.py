@@ -55,12 +55,19 @@ async def get_home_project_id():
     return home_proj_id
 
 
+
+
 # noinspection PyAttributeOutsideInit
-class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
+class PILLAR_OT_sync(pillar.PillarOperatorMixin,
+                     async_loop.AsyncModalOperatorMixin,
+                     bpy.types.Operator):
     bl_idname = 'pillar.sync'
     bl_label = 'Synchronise with Blender Cloud'
 
     log = logging.getLogger('bpy.ops.%s' % bl_idname)
+    home_project_id = None
+    sync_group_id = None  # top-level sync group node ID
+    sync_group_versioned_id = None  # sync group node ID for the given Blender version.
 
     action = bpy.props.EnumProperty(
         items=[
@@ -74,10 +81,6 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
                                                description='Blender version to sync for',
                                                default='%i.%i' % bpy.app.version[:2])
 
-    home_project_id = None
-    sync_group_id = None  # top-level sync group node ID
-    sync_group_versioned_id = None  # sync group node ID for the given Blender version.
-
     def invoke(self, context, event):
         if not self.blender_version:
             self.report({'ERROR'}, 'No Blender version to sync for was given.')
@@ -88,49 +91,6 @@ class PILLAR_OT_sync(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
         log.info('Starting synchronisation')
         self._new_async_task(self.async_execute(context))
         return {'RUNNING_MODAL'}
-
-    def modal(self, context, event):
-        result = async_loop.AsyncModalOperatorMixin.modal(self, context, event)
-        if not {'PASS_THROUGH', 'RUNNING_MODAL'}.intersection(result):
-            self.log.info('Stopped')
-            return result
-
-        return {'PASS_THROUGH'}
-
-    async def check_credentials(self, context) -> bool:
-        """Checks credentials with Pillar, and if ok async-executes the operator."""
-
-        self.report({'INFO'}, 'Checking Blender Cloud credentials')
-
-        try:
-            user_id = await pillar.check_pillar_credentials()
-        except pillar.NotSubscribedToCloudError:
-            self.log.warning(
-                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            self.report({'INFO'},
-                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            return None
-        except pillar.CredentialsNotSyncedError:
-            self.log.info('Credentials not synced, re-syncing automatically.')
-        else:
-            self.log.info('Credentials okay.')
-            return user_id
-
-        try:
-            user_id = await pillar.refresh_pillar_credentials()
-        except pillar.NotSubscribedToCloudError:
-            self.log.warning(
-                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            self.report({'INFO'},
-                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            return None
-        except pillar.UserNotLoggedInError:
-            self.log.error('User not logged in on Blender ID.')
-        else:
-            self.log.info('Credentials refreshed and ok.')
-            return user_id
-
-        return None
 
     async def async_execute(self, context):
         """Entry point of the asynchronous operator."""

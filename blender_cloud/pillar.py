@@ -659,3 +659,44 @@ def is_cancelled(future: asyncio.Future) -> bool:
     # assert future is not None  # for debugging purposes.
     cancelled = future is not None and future.cancelled()
     return cancelled
+
+
+class PillarOperatorMixin:
+
+    async def check_credentials(self, context) -> bool:
+        """Checks credentials with Pillar, and if ok returns the user ID.
+
+        Returns None if the user cannot be found, or if the user is not a Cloud subscriber.
+        """
+
+        self.report({'INFO'}, 'Checking Blender Cloud credentials')
+
+        try:
+            user_id = await check_pillar_credentials()
+        except NotSubscribedToCloudError:
+            self.log.warning(
+                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.report({'INFO'},
+                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            return None
+        except CredentialsNotSyncedError:
+            self.log.info('Credentials not synced, re-syncing automatically.')
+        else:
+            self.log.info('Credentials okay.')
+            return user_id
+
+        try:
+            user_id = await refresh_pillar_credentials()
+        except NotSubscribedToCloudError:
+            self.log.warning(
+                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            self.report({'INFO'},
+                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+            return None
+        except UserNotLoggedInError:
+            self.log.error('User not logged in on Blender ID.')
+        else:
+            self.log.info('Credentials refreshed and ok.')
+            return user_id
+
+        return None
