@@ -6,8 +6,8 @@ Separated from __init__.py so that we can import & run from non-Blender environm
 import logging
 
 import bpy
-from bpy.types import AddonPreferences, Operator, WindowManager, Scene
-from bpy.props import StringProperty
+from bpy.types import AddonPreferences, Operator, WindowManager, Scene, PropertyGroup
+from bpy.props import StringProperty, EnumProperty, PointerProperty
 
 from . import pillar, gui
 
@@ -18,12 +18,44 @@ ADDON_NAME = 'blender_cloud'
 log = logging.getLogger(__name__)
 
 
+def redraw(self, context):
+    log.debug('SyncStatusProperties.status = %s', self.status)
+    context.area.tag_redraw()
+
+
+class SyncStatusProperties(PropertyGroup):
+    status = EnumProperty(
+        items=[
+            ('NONE', 'NONE', 'We have done nothing at all yet.'),
+            ('IDLE', 'IDLE', 'User requested something, which is done, and we are now idle.'),
+            ('SYNCING', 'SYNCING', 'Synchronising with Blender Cloud.'),
+        ],
+        name='status',
+        description='Current status of Blender Sync.',
+        update=redraw)
+    message = StringProperty(name='message', update=redraw)
+    level = EnumProperty(
+        items=[
+            ('INFO', 'INFO', ''),
+            ('WARNING', 'WARNING', ''),
+            ('ERROR', 'ERROR', ''),
+        ],
+        name='level',
+        update=redraw)
+
+    def report(self, level: set, message: str):
+        assert len(level) == 1, 'level should be a set of one string, not %r' % level
+        self.level = level.pop()
+        self.message = message
+        log.error('REPORT %s: %s / %s', self, self.level, self.message)
+
+
 class BlenderCloudPreferences(AddonPreferences):
     bl_idname = ADDON_NAME
 
     # The following two properties are read-only to limit the scope of the
     # addon and allow for proper testing within this scope.
-    pillar_server = bpy.props.StringProperty(
+    pillar_server = StringProperty(
         name='Blender Cloud Server',
         description='URL of the Blender Cloud backend server',
         default=PILLAR_SERVER_URL,
@@ -91,6 +123,37 @@ class BlenderCloudPreferences(AddonPreferences):
         # sub.prop(self, "project_uuid")
         sub.operator("pillar.credentials_update")
 
+        bss = context.window_manager.blender_sync_status
+        col = layout.column()
+        row = col.row()
+        row.label('Blender Sync')
+
+        icon_for_level = {
+            'INFO': 'NONE',
+            'WARNING': 'INFO',
+            'ERROR': 'ERROR',
+        }
+        message_container = row.row()
+        message_container.label(bss.message or '-idle-', icon=icon_for_level[bss.level])
+        # message_container.enabled = bool(bss.message)
+        message_container.alert = True  # bss.level in {'WARNING', 'ERROR'}
+
+        sub = col.column()
+        sub.enabled = bss.status in {'NONE', 'IDLE'}
+
+        row = sub.row()
+        row.operator('pillar.sync', text='Refresh', icon='FILE_REFRESH').action = 'REFRESH'
+        row.operator('pillar.sync', text='To Cloud').action = 'PUSH'
+
+        if 'available_blender_versions' in bss:
+            for version in bss['available_blender_versions']:
+                props = sub.operator('pillar.sync', icon='FILE_REFRESH',
+                                     text='From Cloud %s' % version)
+                props.action = 'PULL'
+                props.blender_version = version
+
+        # sub.prop(bss, 'level')
+
 
 class PillarCredentialsUpdate(Operator):
     """Updates the Pillar URL and tests the new URL."""
@@ -143,6 +206,7 @@ def preferences() -> BlenderCloudPreferences:
 def register():
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
+    bpy.utils.register_class(SyncStatusProperties)
 
     addon_prefs = preferences()
 
@@ -162,13 +226,15 @@ def register():
         default=addon_prefs.local_texture_dir,
         update=default_if_empty)
 
+    WindowManager.blender_sync_status = PointerProperty(type=SyncStatusProperties)
+
 
 def unregister():
     gui.unregister()
 
     bpy.utils.unregister_class(PillarCredentialsUpdate)
     bpy.utils.unregister_class(BlenderCloudPreferences)
+    bpy.utils.unregister_class(SyncStatusProperties)
 
-    del WindowManager.blender_cloud_project
-    del WindowManager.blender_cloud_node
-    del WindowManager.blender_cloud_thumbnails
+    del WindowManager.last_blender_cloud_location
+    del WindowManager.blender_sync_status

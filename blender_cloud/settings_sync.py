@@ -1,5 +1,5 @@
-"""Synchronises settings & startup file with the Cloud.
 
+"""Synchronises settings & startup file with the Cloud.
 Caching is disabled on many PillarSDK calls, as synchronisation can happen
 rapidly between multiple machines. This means that information can be outdated
 in seconds, rather than the minutes the cache system assumes.
@@ -36,6 +36,37 @@ SYNC_GROUP_NODE_NAME = 'Blender Sync'
 SYNC_GROUP_NODE_DESC = 'The [Blender Cloud Addon](https://cloud.blender.org/services' \
                        '#blender-addon) will synchronize your Blender settings here.'
 log = logging.getLogger(__name__)
+
+
+def set_blender_sync_status(set_status: str):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            bss = bpy.context.window_manager.blender_sync_status
+            bss.status = set_status
+            try:
+                return func(*args, **kwargs)
+            finally:
+                bss.status = 'IDLE'
+
+        return wrapper
+
+    return decorator
+
+
+def async_set_blender_sync_status(set_status: str):
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            bss = bpy.context.window_manager.blender_sync_status
+            bss.status = set_status
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                bss.status = 'IDLE'
+
+        return wrapper
+    return decorator
 
 
 async def get_home_project(params=None) -> pillarsdk.Project:
@@ -190,6 +221,53 @@ async def attach_file_to_group(file_path: pathlib.Path,
     return node
 
 
+@functools.lru_cache()
+async def available_blender_versions(home_project_id: str, user_id: str) -> list:
+    bss = bpy.context.window_manager.blender_sync_status
+
+    # Get the available Blender versions.
+    sync_group = await pillar_call(
+        pillarsdk.Node.find_first,
+        params={
+            'where': {'project': home_project_id,
+                      'node_type': 'group',
+                      'parent': None,
+                      'name': SYNC_GROUP_NODE_NAME,
+                      'user': user_id},
+            'projection': {'_id': 1},
+        },
+        caching=False)
+
+    if sync_group is None:
+        bss.report({'ERROR'}, 'No synced Blender settings in your home project')
+        log.warning('No synced Blender settings in your home project')
+        log.debug('-- unable to find sync group for home_project_id=%r and user_id=%r',
+                  home_project_id, user_id)
+        return []
+
+    sync_nodes = await pillar_call(
+        pillarsdk.Node.all,
+        params={
+            'where': {'project': home_project_id,
+                      'node_type': 'group',
+                      'parent': sync_group['_id'],
+                      'user': user_id},
+            'projection': {'_id': 1, 'name': 1},
+            'sort': '-name',
+        },
+        caching=False)
+
+    if not sync_nodes or not sync_nodes._items:
+        bss.report({'ERROR'}, 'No synced Blender settings in your home project')
+        log.warning('No synced Blender settings in your home project')
+        return []
+
+    versions = sync_nodes._items
+    log.info('Versions: %s', versions)
+
+    return [node.name for node in versions]
+
+
 # noinspection PyAttributeOutsideInit
 class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                      async_loop.AsyncModalOperatorMixin,
@@ -206,29 +284,37 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         items=[
             ('PUSH', 'Push', 'Push settings to the Blender Cloud'),
             ('PULL', 'Pull', 'Pull settings from the Blender Cloud'),
+            ('REFRESH', 'Refresh', 'Refresh available versions'),
         ],
-        name='action',
-        description='Synchronises settings with the Blender Cloud.')
+        name='action')
 
     blender_version = bpy.props.StringProperty(name='blender_version',
                                                description='Blender version to sync for',
                                                default='%i.%i' % bpy.app.version[:2])
 
+    def bss_report(self, level, message):
+        bss = bpy.context.window_manager.blender_sync_status
+        bss.report(level, message)
+
     def invoke(self, context, event):
+        self.log.info('at invoke: self = %r', self)
+
+        self.log.info('Pulling from Blender %s', self.blender_version)
         if not self.blender_version:
-            self.report({'ERROR'}, 'No Blender version to sync for was given.')
+            self.bss_report({'ERROR'}, 'No Blender version to sync for was given.')
             return {'CANCELLED'}
 
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
-        log.info('Starting synchronisation')
+        self.log.info('Starting synchronisation')
         self._new_async_task(self.async_execute(context))
         return {'RUNNING_MODAL'}
 
+    @async_set_blender_sync_status('SYNCING')
     async def async_execute(self, context):
         """Entry point of the asynchronous operator."""
 
-        self.report({'INFO'}, 'Synchronizing settings %s with Blender Cloud' % self.action)
+        self.bss_report({'INFO'}, 'Synchronizing settings %s with Blender Cloud' % self.action)
 
         try:
             self.user_id = await self.check_credentials(context)
@@ -236,7 +322,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 self.home_project_id = await get_home_project_id()
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Forbidden access to home project.')
-                self.report({'ERROR'}, 'Did not get access to home project.')
+                self.bss_report({'ERROR'}, 'Did not get access to home project.')
                 self._state = 'QUIT'
                 return
 
@@ -254,7 +340,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                               self.blender_version, self.sync_group_versioned_id)
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Unable to find Group ID')
-                self.report({'ERROR'}, 'Unable to find sync folder.')
+                self.bss_report({'ERROR'}, 'Unable to find sync folder.')
                 self._state = 'QUIT'
                 return
 
@@ -262,11 +348,12 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             action = {
                 'PUSH': self.action_push,
                 'PULL': self.action_pull,
+                'REFRESH': self.action_refresh,
             }[self.action]
             await action(context)
         except Exception as ex:
             self.log.exception('Unexpected exception caught.')
-            self.report({'ERROR'}, 'Unexpected error: %s' % ex)
+            self.bss_report({'ERROR'}, 'Unexpected error: %s' % ex)
 
         self._state = 'QUIT'
 
@@ -284,46 +371,61 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 self.log.debug('Skipping non-existing %s', path)
                 continue
 
-            self.report({'INFO'}, 'Uploading %s' % fname)
+            self.bss_report({'INFO'}, 'Uploading %s' % fname)
             await attach_file_to_group(path,
                                        self.home_project_id,
                                        self.sync_group_versioned_id,
                                        self.user_id,
                                        future=self.signalling_future)
 
-        self.report({'INFO'}, 'Settings pushed to Blender Cloud.')
+        self.bss_report({'INFO'}, 'Settings pushed to Blender Cloud.')
 
     async def action_pull(self, context):
         """Loads files from the Pillar server."""
 
         # Refuse to start if the file hasn't been saved.
         if context.blend_data.is_dirty:
-            self.report({'ERROR'}, 'Please save your Blend file before pulling'
+            self.bss_report({'ERROR'}, 'Please save your Blend file before pulling'
                                    ' settings from the Blender Cloud.')
             return
 
         # If the sync group node doesn't exist, offer a list of groups that do.
         if self.sync_group_id is None:
-            self.report({'ERROR'}, 'There are no synced Blender settings in your home project.')
+            self.bss_report({'ERROR'}, 'There are no synced Blender settings in your home project.')
             return
 
         if self.sync_group_versioned_id is None:
-            self.report({'ERROR'}, 'Therre are no synced Blender settings for version %s' %
+            self.bss_report({'ERROR'}, 'Therre are no synced Blender settings for version %s' %
                         self.blender_version)
             return
 
-        self.report({'INFO'}, 'Pulling settings from Blender Cloud')
+        self.bss_report({'INFO'}, 'Pulling settings from Blender Cloud')
         with tempfile.TemporaryDirectory(prefix='bcloud-sync') as tempdir:
             for fname in SETTINGS_FILES_TO_UPLOAD:
                 await self.download_settings_file(fname, tempdir)
 
-        self.report({'WARNING'}, 'Settings pulled from Cloud, restart Blender to load them.')
+        self.bss_report({'WARNING'}, 'Settings pulled from Cloud, restart Blender to load them.')
+        self.log.info('at end: self = %r', self)
+
+    async def action_refresh(self, context):
+        self.bss_report({'INFO'}, 'Refreshing available Blender versions.')
+
+        # Clear the LRU cache of available_blender_versions so that we can
+        # obtain new versions (if someone synced from somewhere else, for example)
+        available_blender_versions.cache_clear()
+
+        versions = await available_blender_versions(self.home_project_id, self.user_id)
+        bss = bpy.context.window_manager.blender_sync_status
+        bss['available_blender_versions'] = versions
+
+        self.bss_report({'INFO'}, '')
+
 
     async def download_settings_file(self, fname: str, temp_dir: str):
         config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
         meta_path = cache.cache_directory('home-project', 'blender-sync')
 
-        self.report({'INFO'}, 'Downloading %s from Cloud' % fname)
+        self.bss_report({'INFO'}, 'Downloading %s from Cloud' % fname)
 
         # Get the asset node
         node_props = {'project': self.home_project_id,
@@ -335,7 +437,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             'projection': {'_id': 1, 'properties.file': 1}
         }, caching=False)
         if node is None:
-            self.report({'INFO'}, 'Unable to find %s on Blender Cloud' % fname)
+            self.bss_report({'INFO'}, 'Unable to find %s on Blender Cloud' % fname)
             self.log.info('Unable to find node on Blender Cloud for %s', fname)
             return
 
@@ -412,132 +514,9 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 prefs[key] = value
 
 
-@functools.lru_cache()
-def available_blender_versions(home_project_id: str, user_id: str) -> list:
-    # Get the available Blender versions.
-    api = pillar.pillar_api(caching=False)
-    sync_group = pillarsdk.Node.find_first(
-        params={
-            'where': {'project': home_project_id,
-                      'node_type': 'group',
-                      'parent': None,
-                      'name': SYNC_GROUP_NODE_NAME,
-                      'user': user_id},
-            'projection': {'_id': 1},
-        },
-        api=api)
-
-    if sync_group is None:
-        # self.report({'ERROR'}, 'No synced Blender settings in your home project')
-        log.warning('No synced Blender settings in your home project')
-        log.debug('-- unable to find sync group for home_project_id=%r and user_id=%r',
-                  home_project_id, user_id)
-        return []
-
-    sync_nodes = pillarsdk.Node.all(
-        params={
-            'where': {'project': home_project_id,
-                      'node_type': 'group',
-                      'parent': sync_group['_id'],
-                      'user': user_id},
-            'projection': {'_id': 1, 'name': 1},
-            'sort': '-name',
-        },
-        api=api)
-
-    if not sync_nodes or not sync_nodes._items:
-        # self.report({'ERROR'}, 'No synced Blender settings in your home project')
-        log.warning('No synced Blender settings in your home project')
-        return []
-
-    versions = sync_nodes._items
-    log.info('Versions: %s', versions)
-
-    return [(node.name, node.name, '')
-            for node in versions]
-
-
-class PILLAR_OT_syncable_versions(pillar.PillarOperatorMixin,
-                                  bpy.types.Operator):
-    """For now, this operator runs synchronously, because it has to be nice
-    with Blender's UI drawing code.
-    """
-
-    bl_idname = 'pillar.syncable_versions'
-    bl_label = 'Synchronise with Blender Cloud from other Blender version'
-
-    log = logging.getLogger('bpy.ops.%s' % bl_idname)
-    home_project_id = None
-    user_id = None
-
-    def _get_available_blender_versions(self, context):
-        # Work around bug T48715
-        home_project_id = context.window_manager['home_project_id']
-        user_id = context.window_manager['user_id']
-
-        if home_project_id is None or user_id is None:
-            log.debug('_get_available_blender_versions() called before invoke()')
-            return []
-
-        return available_blender_versions(home_project_id, user_id)
-
-    blender_version = bpy.props.EnumProperty(
-        name='available_versions',
-        description='Available Blender versions',
-        items=_get_available_blender_versions
-    )
-
-    def invoke(self, context, event):
-        loop = asyncio.get_event_loop()
-
-        # Check credentials.
-        future = asyncio.ensure_future(self.check_credentials(context))
-        loop.run_until_complete(future)
-        self.user_id = future.result()
-        if self.user_id is None:
-            return {'CANCELLED'}
-
-        # Get the home project.
-        future = asyncio.ensure_future(get_home_project_id())
-        loop.run_until_complete(future)
-        self.home_project_id = future.result()
-        self.log.info('Home project ID: %s', self.home_project_id)
-
-        # Clear the LRU cache of available_blender_versions so that we can
-        # obtain new versions (if someone synced from somewhere else, for example)
-        available_blender_versions.cache_clear()
-
-        # Work around bug T48715
-        context.window_manager['home_project_id'] = self.home_project_id
-        context.window_manager['user_id'] = self.user_id
-
-        return context.window_manager.invoke_props_dialog(self)
-
-    def execute(self, context):
-        self.report({'INFO'},
-                    'Going to pull settings from Blender version %s' % self.blender_version)
-        bpy.ops.pillar.sync('INVOKE_DEFAULT', action='PULL', blender_version=self.blender_version)
-        return {'FINISHED'}
-
-
-def draw_userpref_header(self: bpy.types.USERPREF_HT_header, context):
-    """Adds some buttons to the userprefs header."""
-
-    layout = self.layout
-    layout.operator('pillar.sync', icon='FILE_REFRESH',
-                    text='Push to Cloud').action = 'PUSH'
-    layout.operator('pillar.sync', icon='FILE_REFRESH',
-                    text='Pull from Cloud').action = 'PULL'
-    layout.operator('pillar.syncable_versions', text='Pull other version')
-
-
 def register():
     bpy.utils.register_class(PILLAR_OT_sync)
-    bpy.utils.register_class(PILLAR_OT_syncable_versions)
-    bpy.types.USERPREF_HT_header.append(draw_userpref_header)
 
 
 def unregister():
     bpy.utils.unregister_class(PILLAR_OT_sync)
-    bpy.utils.unregister_class(PILLAR_OT_syncable_versions)
-    bpy.types.USERPREF_HT_header.remove(draw_userpref_header)

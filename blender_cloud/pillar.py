@@ -669,7 +669,7 @@ class PillarOperatorMixin:
         Returns None if the user cannot be found, or if the user is not a Cloud subscriber.
         """
 
-        self.report({'INFO'}, 'Checking Blender Cloud credentials')
+        # self.report({'INFO'}, 'Checking Blender Cloud credentials')
 
         try:
             user_id = await check_pillar_credentials()
