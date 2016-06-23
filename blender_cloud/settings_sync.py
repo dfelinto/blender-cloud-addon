@@ -55,6 +55,137 @@ async def get_home_project_id():
     return home_proj_id
 
 
+async def find_sync_group_id(home_project_id: str,
+                             user_id: str,
+                             blender_version: str,
+                             *,
+                             may_create=True) -> str:
+    """Finds the group node in which to store sync assets.
+
+    If the group node doesn't exist and may_create=True, it creates it.
+    """
+
+    # Find/create the top-level sync group node.
+    try:
+        sync_group, created = await find_or_create_node(
+            where={'project': home_project_id,
+                   'node_type': 'group',
+                   'parent': None,
+                   'name': SYNC_GROUP_NODE_NAME,
+                   'user': user_id},
+            additional_create_props={
+                'description': SYNC_GROUP_NODE_DESC,
+                'properties': {'status': 'published'},
+            },
+            projection={'_id': 1},
+            may_create=may_create)
+    except pillar.PillarError:
+        raise pillar.PillarError('Unable to create sync folder on the Cloud')
+
+    if not may_create and sync_group is None:
+        log.info("Sync folder doesn't exist, and not creating it either.")
+        return None, None
+
+    # Find/create the sub-group for the requested Blender version
+    try:
+        sub_sync_group, created = await find_or_create_node(
+            where={'project': home_project_id,
+                   'node_type': 'group',
+                   'parent': sync_group['_id'],
+                   'name': blender_version,
+                   'user': user_id},
+            additional_create_props={
+                'description': 'Sync folder for Blender %s' % blender_version,
+                'properties': {'status': 'published'},
+            },
+            projection={'_id': 1},
+            may_create=may_create)
+    except pillar.PillarError:
+        raise pillar.PillarError('Unable to create sync folder on the Cloud')
+
+    if not may_create and sub_sync_group is None:
+        log.info("Sync folder for Blender version %s doesn't exist, "
+                 "and not creating it either.", blender_version)
+        return sync_group['_id'], None
+
+    return sync_group['_id'], sub_sync_group['_id']
+
+
+async def find_or_create_node(where: dict,
+                              additional_create_props: dict,
+                              projection: dict = None,
+                              may_create: bool = True) -> (pillarsdk.Node, bool):
+    """Finds a node by the `filter_props`, creates it using the additional props.
+
+    :returns: tuple (node, created), where 'created' is a bool indicating whether
+              a new node was created, or an exising one is returned.
+    """
+
+    params = {
+        'where': where,
+    }
+    if projection:
+        params['projection'] = projection
+
+    found_node = await pillar_call(pillarsdk.Node.find_first, params, caching=False)
+
+    created = False
+    if found_node is None:
+        if not may_create:
+            return None, False
+
+        log.info('Creating new sync group node')
+
+        # Augment the node properties to form a complete node.
+        node_props = where.copy()
+        node_props.update(additional_create_props)
+
+        found_node = pillarsdk.Node.new(node_props)
+        created_ok = await pillar_call(found_node.create)
+        if not created_ok:
+            log.error('Blender Cloud addon: unable to create node on the Cloud.')
+            raise pillar.PillarError('Unable to create node on the Cloud')
+        created = True
+
+    return found_node, created
+
+
+async def attach_file_to_group(file_path: pathlib.Path,
+                               home_project_id: str,
+                               group_node_id: str,
+                               user_id: str,
+                               *,
+                               future=None) -> pillarsdk.Node:
+    """Creates an Asset node and attaches a file document to it."""
+
+    # First upload the file...
+    file_id = await pillar.upload_file(home_project_id, file_path,
+                                       future=future)
+
+    # Then attach it to a node.
+    node, created = await find_or_create_node(
+        where={
+            'project': home_project_id,
+            'node_type': 'asset',
+            'parent': group_node_id,
+            'name': file_path.name,
+            'user': user_id},
+        additional_create_props={
+            'properties': {'file': file_id},
+        })
+
+    if not created:
+        # Update the existing node.
+        node.properties = {'file': file_id}
+        updated_ok = await pillar_call(node.update)
+        if not updated_ok:
+            log.error(
+                'Blender Cloud addon: unable to update asset node on the Cloud for file %s.',
+                file_path)
+            raise pillar.PillarError(
+                'Unable to update asset node on the Cloud for file %s' % file_path.name)
+
+    return node
 
 
 # noinspection PyAttributeOutsideInit
@@ -110,7 +241,10 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             # Only create the folder structure if we're pushing.
             may_create = self.action == 'PUSH'
             try:
-                gid, subgid = await self.find_sync_group_id(may_create=may_create)
+                gid, subgid = await find_sync_group_id(self.home_project_id,
+                                                       self.user_id,
+                                                       self.blender_version,
+                                                       may_create=may_create)
                 self.sync_group_id = gid
                 self.sync_group_versioned_id = subgid
                 self.log.info('Found top-level group node ID: %s', self.sync_group_id)
@@ -149,7 +283,11 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 continue
 
             self.report({'INFO'}, 'Uploading %s' % fname)
-            await self.attach_file_to_group(path)
+            await attach_file_to_group(path,
+                                       self.home_project_id,
+                                       self.sync_group_versioned_id,
+                                       self.user_id,
+                                       future=self.signalling_future)
 
         self.report({'INFO'}, 'Settings pushed to Blender Cloud.')
 
@@ -179,8 +317,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
         self.report({'WARNING'}, 'Settings pulled from Cloud, restart Blender to load them.')
 
-    async def download_settings_file(self, fname: str, temp_dir: str
-                                     ):
+    async def download_settings_file(self, fname: str, temp_dir: str):
         config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
         meta_path = cache.cache_directory('home-project', 'blender-sync')
 
@@ -272,127 +409,6 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 self.log.debug('  -> setting prefs[%r] = %r' % (key, value))
                 prefs[key] = value
 
-    async def find_or_create_node(self,
-                                  where: dict,
-                                  additional_create_props: dict,
-                                  projection: dict = None,
-                                  may_create: bool = True) -> (pillarsdk.Node, bool):
-        """Finds a node by the `filter_props`, creates it using the additional props.
-
-        :returns: tuple (node, created), where 'created' is a bool indicating whether
-                  a new node was created, or an exising one is returned.
-        """
-
-        params = {
-            'where': where,
-        }
-        if projection:
-            params['projection'] = projection
-
-        found_node = await pillar_call(pillarsdk.Node.find_first, params, caching=False)
-
-        created = False
-        if found_node is None:
-            if not may_create:
-                return None, False
-
-            log.info('Creating new sync group node')
-
-            # Augment the node properties to form a complete node.
-            node_props = where.copy()
-            node_props.update(additional_create_props)
-
-            found_node = pillarsdk.Node.new(node_props)
-            created_ok = await pillar_call(found_node.create)
-            if not created_ok:
-                log.error('Blender Cloud addon: unable to create node on the Cloud.')
-                raise pillar.PillarError('Unable to create node on the Cloud')
-            created = True
-
-        return found_node, created
-
-    async def find_sync_group_id(self, may_create=True) -> str:
-        """Finds the group node in which to store sync assets.
-
-        If the group node doesn't exist and may_create=True, it creates it.
-        """
-
-        # Find/create the top-level sync group node.
-        try:
-            sync_group, created = await self.find_or_create_node(
-                where={'project': self.home_project_id,
-                       'node_type': 'group',
-                       'parent': None,
-                       'name': SYNC_GROUP_NODE_NAME,
-                       'user': self.user_id},
-                additional_create_props={
-                    'description': SYNC_GROUP_NODE_DESC,
-                    'properties': {'status': 'published'},
-                },
-                projection={'_id': 1},
-                may_create=may_create)
-        except pillar.PillarError:
-            raise pillar.PillarError('Unable to create sync folder on the Cloud')
-
-        if not may_create and sync_group is None:
-            log.info("Sync folder doesn't exist, and not creating it either.")
-            return None, None
-
-        # Find/create the sub-group for the requested Blender version
-        try:
-            sub_sync_group, created = await self.find_or_create_node(
-                where={'project': self.home_project_id,
-                       'node_type': 'group',
-                       'parent': sync_group['_id'],
-                       'name': self.blender_version,
-                       'user': self.user_id},
-                additional_create_props={
-                    'description': 'Sync folder for Blender %s' % self.blender_version,
-                    'properties': {'status': 'published'},
-                },
-                projection={'_id': 1},
-                may_create=may_create)
-        except pillar.PillarError:
-            raise pillar.PillarError('Unable to create sync folder on the Cloud')
-
-        if not may_create and sub_sync_group is None:
-            log.info("Sync folder for Blender version %s doesn't exist, "
-                     "and not creating it either.", self.blender_version)
-            return sync_group['_id'], None
-
-        return sync_group['_id'], sub_sync_group['_id']
-
-    async def attach_file_to_group(self, file_path: pathlib.Path) -> pillarsdk.Node:
-        """Creates an Asset node and attaches a file document to it."""
-
-        # First upload the file...
-        file_id = await pillar.upload_file(self.home_project_id, file_path,
-                                           future=self.signalling_future)
-
-        # Then attach it to a node.
-        node, created = await self.find_or_create_node(
-            where={
-                'project': self.home_project_id,
-                'node_type': 'asset',
-                'parent': self.sync_group_versioned_id,
-                'name': file_path.name,
-                'user': self.user_id},
-            additional_create_props={
-                'properties': {'file': file_id},
-            })
-
-        if not created:
-            # Update the existing node.
-            node.properties = {'file': file_id}
-            updated_ok = await pillar_call(node.update)
-            if not updated_ok:
-                log.error(
-                    'Blender Cloud addon: unable to update asset node on the Cloud for file %s.',
-                    file_path)
-                raise pillar.PillarError(
-                    'Unable to update asset node on the Cloud for file %s' % file_path.name)
-
-        return node
 
 
 def draw_userpref_header(self: bpy.types.USERPREF_HT_header, context):
