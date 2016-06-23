@@ -4,13 +4,15 @@ Caching is disabled on many PillarSDK calls, as synchronisation can happen
 rapidly between multiple machines. This means that information can be outdated
 in seconds, rather than the minutes the cache system assumes.
 """
-
+import functools
 import logging
 import pathlib
 import tempfile
 import shutil
 
 import bpy
+
+import asyncio
 
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
@@ -410,6 +412,113 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 prefs[key] = value
 
 
+@functools.lru_cache()
+def available_blender_versions(home_project_id: str, user_id: str) -> list:
+    # Get the available Blender versions.
+    api = pillar.pillar_api(caching=False)
+    sync_group = pillarsdk.Node.find_first(
+        params={
+            'where': {'project': home_project_id,
+                      'node_type': 'group',
+                      'parent': None,
+                      'name': SYNC_GROUP_NODE_NAME,
+                      'user': user_id},
+            'projection': {'_id': 1},
+        },
+        api=api)
+
+    if sync_group is None:
+        # self.report({'ERROR'}, 'No synced Blender settings in your home project')
+        log.warning('No synced Blender settings in your home project')
+        log.debug('-- unable to find sync group for home_project_id=%r and user_id=%r',
+                  home_project_id, user_id)
+        return []
+
+    sync_nodes = pillarsdk.Node.all(
+        params={
+            'where': {'project': home_project_id,
+                      'node_type': 'group',
+                      'parent': sync_group['_id'],
+                      'user': user_id},
+            'projection': {'_id': 1, 'name': 1},
+            'sort': '-name',
+        },
+        api=api)
+
+    if not sync_nodes or not sync_nodes._items:
+        # self.report({'ERROR'}, 'No synced Blender settings in your home project')
+        log.warning('No synced Blender settings in your home project')
+        return []
+
+    versions = sync_nodes._items
+    log.info('Versions: %s', versions)
+
+    return [(node.name, node.name, '')
+            for node in versions]
+
+
+class PILLAR_OT_syncable_versions(pillar.PillarOperatorMixin,
+                                  bpy.types.Operator):
+    """For now, this operator runs synchronously, because it has to be nice
+    with Blender's UI drawing code.
+    """
+
+    bl_idname = 'pillar.syncable_versions'
+    bl_label = 'Synchronise with Blender Cloud from other Blender version'
+
+    log = logging.getLogger('bpy.ops.%s' % bl_idname)
+    home_project_id = None
+    user_id = None
+
+    def _get_available_blender_versions(self, context):
+        # Work around bug T48715
+        home_project_id = context.window_manager['home_project_id']
+        user_id = context.window_manager['user_id']
+
+        if home_project_id is None or user_id is None:
+            log.debug('_get_available_blender_versions() called before invoke()')
+            return []
+
+        return available_blender_versions(home_project_id, user_id)
+
+    blender_version = bpy.props.EnumProperty(
+        name='available_versions',
+        description='Available Blender versions',
+        items=_get_available_blender_versions
+    )
+
+    def invoke(self, context, event):
+        loop = asyncio.get_event_loop()
+
+        # Check credentials.
+        future = asyncio.ensure_future(self.check_credentials(context))
+        loop.run_until_complete(future)
+        self.user_id = future.result()
+        if self.user_id is None:
+            return {'CANCELLED'}
+
+        # Get the home project.
+        future = asyncio.ensure_future(get_home_project_id())
+        loop.run_until_complete(future)
+        self.home_project_id = future.result()
+        self.log.info('Home project ID: %s', self.home_project_id)
+
+        # Clear the LRU cache of available_blender_versions so that we can
+        # obtain new versions (if someone synced from somewhere else, for example)
+        available_blender_versions.cache_clear()
+
+        # Work around bug T48715
+        context.window_manager['home_project_id'] = self.home_project_id
+        context.window_manager['user_id'] = self.user_id
+
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        self.report({'INFO'},
+                    'Going to pull settings from Blender version %s' % self.blender_version)
+        bpy.ops.pillar.sync('INVOKE_DEFAULT', action='PULL', blender_version=self.blender_version)
+        return {'FINISHED'}
+
 
 def draw_userpref_header(self: bpy.types.USERPREF_HT_header, context):
     """Adds some buttons to the userprefs header."""
@@ -419,13 +528,16 @@ def draw_userpref_header(self: bpy.types.USERPREF_HT_header, context):
                     text='Push to Cloud').action = 'PUSH'
     layout.operator('pillar.sync', icon='FILE_REFRESH',
                     text='Pull from Cloud').action = 'PULL'
+    layout.operator('pillar.syncable_versions', text='Pull other version')
 
 
 def register():
     bpy.utils.register_class(PILLAR_OT_sync)
+    bpy.utils.register_class(PILLAR_OT_syncable_versions)
     bpy.types.USERPREF_HT_header.append(draw_userpref_header)
 
 
 def unregister():
     bpy.utils.unregister_class(PILLAR_OT_sync)
+    bpy.utils.unregister_class(PILLAR_OT_syncable_versions)
     bpy.types.USERPREF_HT_header.remove(draw_userpref_header)
