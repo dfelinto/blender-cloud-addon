@@ -21,7 +21,7 @@
 bl_info = {
     'name': 'Blender Cloud',
     'author': 'Sybren A. Stüvel and Francesco Siddi',
-    'version': (1, 1, 0),
+    'version': (1, 2, 0),
     'blender': (2, 77, 0),
     'location': 'Addon Preferences panel, and Ctrl+Shift+Alt+A anywhere for texture browser',
     'description': 'Texture library browser and Blender Sync. Requires the Blender ID addon '
@@ -29,7 +29,7 @@ bl_info = {
     'wiki_url': 'http://wiki.blender.org/index.php/Extensions:2.6/Py/'
                 'Scripts/System/BlenderCloud',
     'category': 'System',
-    'support': 'TESTING'
+    'support': 'OFFICIAL'
 }
 
 # Support reloading
