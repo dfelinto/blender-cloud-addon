@@ -355,6 +355,8 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
         try:
             self.user_id = await self.check_credentials(context)
+            log.debug('Found user ID: %s', self.user_id)
+
             try:
                 self.home_project_id = await get_home_project_id()
             except sdk_exceptions.ForbiddenAccess:
@@ -388,6 +390,9 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 'REFRESH': self.action_refresh,
             }[action]
             await action_method(context)
+        except pillar.CredentialsNotSyncedError:
+            self.log.exception('Error checking/refreshing credentials.')
+            self.bss_report({'ERROR'}, 'Please log in on Blender ID first.')
         except Exception as ex:
             self.log.exception('Unexpected exception caught.')
             self.bss_report({'ERROR'}, 'Unexpected error: %s' % ex)
