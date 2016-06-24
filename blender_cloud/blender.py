@@ -19,8 +19,15 @@ log = logging.getLogger(__name__)
 
 
 def redraw(self, context):
-    log.debug('SyncStatusProperties.status = %s', self.status)
     context.area.tag_redraw()
+
+
+def blender_syncable_versions(self, context):
+    bss = context.window_manager.blender_sync_status
+    versions = bss.available_blender_versions
+    if not versions:
+        return [('', 'No settings stored in your home project.', '')]
+    return [(v, v, '') for v in versions]
 
 
 class SyncStatusProperties(PropertyGroup):
@@ -33,6 +40,12 @@ class SyncStatusProperties(PropertyGroup):
         name='status',
         description='Current status of Blender Sync.',
         update=redraw)
+
+    version = EnumProperty(
+        items=blender_syncable_versions,
+        name='Version of Blender from which to pull',
+        description='Version of Blender from which to pull')
+
     message = StringProperty(name='message', update=redraw)
     level = EnumProperty(
         items=[
@@ -47,7 +60,21 @@ class SyncStatusProperties(PropertyGroup):
         assert len(level) == 1, 'level should be a set of one string, not %r' % level
         self.level = level.pop()
         self.message = message
-        log.error('REPORT %s: %s / %s', self, self.level, self.message)
+
+        # Message can also be empty, just to erase it from the GUI.
+        # No need to actually log those.
+        if message:
+            log.log(logging._nameToLevel[self.level], message)
+
+    # List of syncable versions is stored in 'available_blender_versions' ID property,
+    # because I don't know how to store a variable list of strings in a proper RNA property.
+    @property
+    def available_blender_versions(self) -> list:
+        return self.get('available_blender_versions', [])
+
+    @available_blender_versions.setter
+    def available_blender_versions(self, new_versions):
+        self['available_blender_versions'] = new_versions
 
 
 class BlenderCloudPreferences(AddonPreferences):
@@ -101,31 +128,28 @@ class BlenderCloudPreferences(AddonPreferences):
             help_text = ('To logout or change profile, '
                          'go to the Blender ID add-on preferences.')
 
-        sub = layout.column(align=True)
-        sub.label(text=text, icon=icon)
+        # Authentication stuff
+        auth_box = layout.box()
+        auth_box.label(text=text, icon=icon)
 
         help_lines = textwrap.wrap(help_text, 80)
         for line in help_lines:
-            sub.label(text=line)
+            auth_box.label(text=line)
+        auth_box.operator("pillar.credentials_update")
 
-        sub = layout.column()
+        # Texture browser stuff
+        texture_box = layout.box()
+        texture_box.enabled = icon != 'ERROR'
+        sub = texture_box.column()
         sub.label(text='Local directory for downloaded textures')
         sub.prop(self, "local_texture_dir", text='Default')
         sub.prop(context.scene, "local_texture_dir", text='Current scene')
 
-        # options for Pillar
-        sub = layout.column()
-        sub.enabled = icon != 'ERROR'
-
-        # TODO: let users easily pick a project. For now, we just use the
-        # hard-coded server URL and UUID of the textures project.
-        # sub.prop(self, "pillar_server")
-        # sub.prop(self, "project_uuid")
-        sub.operator("pillar.credentials_update")
-
+        # Blender Sync stuff
         bss = context.window_manager.blender_sync_status
-        col = layout.column()
-        row = col.row()
+        bsync_box = layout.box()
+        bsync_box.enabled = icon != 'ERROR'
+        row = bsync_box.row().split(percentage=0.33)
         row.label('Blender Sync')
 
         icon_for_level = {
@@ -134,25 +158,39 @@ class BlenderCloudPreferences(AddonPreferences):
             'ERROR': 'ERROR',
         }
         message_container = row.row()
-        message_container.label(bss.message or '-idle-', icon=icon_for_level[bss.level])
-        # message_container.enabled = bool(bss.message)
+        message_container.label(bss.message, icon=icon_for_level[bss.level])
         message_container.alert = True  # bss.level in {'WARNING', 'ERROR'}
 
-        sub = col.column()
+        sub = bsync_box.column()
         sub.enabled = bss.status in {'NONE', 'IDLE'}
 
-        row = sub.row()
-        row.operator('pillar.sync', text='Refresh', icon='FILE_REFRESH').action = 'REFRESH'
-        row.operator('pillar.sync', text='To Cloud').action = 'PUSH'
+        buttons = sub.column()
+        row_buttons = buttons.row().split(percentage=0.5)
+        row_pull = row_buttons.row(align=True)
+        row_push = row_buttons.row()
 
-        if 'available_blender_versions' in bss:
-            for version in bss['available_blender_versions']:
-                props = sub.operator('pillar.sync', icon='FILE_REFRESH',
-                                     text='From Cloud %s' % version)
+        row_push.operator('pillar.sync',
+                          text='Save %i.%i settings to Cloud' % bpy.app.version[:2],
+                          icon='TRIA_UP').action = 'PUSH'
+
+        versions = bss.available_blender_versions
+        version = bss.version
+        if bss.status in {'NONE', 'IDLE'}:
+            if not versions or not version:
+                row_pull.operator('pillar.sync',
+                                  text='Find version to load from Cloud',
+                                  icon='TRIA_DOWN').action = 'REFRESH'
+            else:
+                props = row_pull.operator('pillar.sync',
+                                          text='Load %s settings from Cloud' % version,
+                                          icon='TRIA_DOWN')
                 props.action = 'PULL'
                 props.blender_version = version
-
-        # sub.prop(bss, 'level')
+                row_pull.operator('pillar.sync',
+                                  text='',
+                                  icon='DOTSDOWN').action = 'SELECT'
+        else:
+            row_pull.label('Cloud Sync is running.')
 
 
 class PillarCredentialsUpdate(Operator):

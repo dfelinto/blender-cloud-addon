@@ -1,4 +1,3 @@
-
 """Synchronises settings & startup file with the Cloud.
 Caching is disabled on many PillarSDK calls, as synchronisation can happen
 rapidly between multiple machines. This means that information can be outdated
@@ -66,6 +65,7 @@ def async_set_blender_sync_status(set_status: str):
                 bss.status = 'IDLE'
 
         return wrapper
+
     return decorator
 
 
@@ -240,7 +240,6 @@ async def available_blender_versions(home_project_id: str, user_id: str) -> list
 
     if sync_group is None:
         bss.report({'ERROR'}, 'No synced Blender settings in your home project')
-        log.warning('No synced Blender settings in your home project')
         log.debug('-- unable to find sync group for home_project_id=%r and user_id=%r',
                   home_project_id, user_id)
         return []
@@ -259,13 +258,12 @@ async def available_blender_versions(home_project_id: str, user_id: str) -> list
 
     if not sync_nodes or not sync_nodes._items:
         bss.report({'ERROR'}, 'No synced Blender settings in your home project')
-        log.warning('No synced Blender settings in your home project')
         return []
 
-    versions = sync_nodes._items
-    log.info('Versions: %s', versions)
+    versions = [node.name for node in sync_nodes._items]
+    log.debug('Versions: %s', versions)
 
-    return [node.name for node in versions]
+    return versions
 
 
 # noinspection PyAttributeOutsideInit
@@ -285,6 +283,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             ('PUSH', 'Push', 'Push settings to the Blender Cloud'),
             ('PULL', 'Pull', 'Pull settings from the Blender Cloud'),
             ('REFRESH', 'Refresh', 'Refresh available versions'),
+            ('SELECT', 'Select', 'Select version to sync'),
         ],
         name='action')
 
@@ -297,10 +296,11 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         bss.report(level, message)
 
     def invoke(self, context, event):
-        self.log.info('at invoke: self = %r', self)
+        if self.action == 'SELECT':
+            # Synchronous action
+            return self.action_select(context)
 
-        self.log.info('Pulling from Blender %s', self.blender_version)
-        if not self.blender_version:
+        if self.action in {'PUSH', 'PULL'} and not self.blender_version:
             self.bss_report({'ERROR'}, 'No Blender version to sync for was given.')
             return {'CANCELLED'}
 
@@ -310,11 +310,47 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         self._new_async_task(self.async_execute(context))
         return {'RUNNING_MODAL'}
 
+    def action_select(self, context):
+        """Allows selection of the Blender version to use.
+
+        This is a synchronous action, as it requires a dialog box.
+        """
+
+        self.log.info('Performing action SELECT')
+
+        # Do a refresh before we can show the dropdown.
+        fut = asyncio.ensure_future(self.async_execute(context, action_override='REFRESH'))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(fut)
+
+        self._state = 'SELECTING'
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        bss = bpy.context.window_manager.blender_sync_status
+        self.layout.prop(bss, 'version')
+
+    def execute(self, context):
+        if self.action != 'SELECT':
+            log.debug('Ignoring execute() for action %r', self.action)
+            return {'FINISHED'}
+
+        log.debug('Performing execute() for action %r', self.action)
+        # Perform the sync when the user closes the dialog box.
+        bss = bpy.context.window_manager.blender_sync_status
+        bpy.ops.pillar.sync('INVOKE_DEFAULT',
+                            action='PULL',
+                            blender_version=bss.version)
+
+        return {'FINISHED'}
+
     @async_set_blender_sync_status('SYNCING')
-    async def async_execute(self, context):
+    async def async_execute(self, context, *, action_override=None):
         """Entry point of the asynchronous operator."""
 
-        self.bss_report({'INFO'}, 'Synchronizing settings %s with Blender Cloud' % self.action)
+        action = action_override or self.action
+        self.bss_report({'INFO'}, 'Communicating with Blender Cloud')
+        self.log.info('Performing action %s', action)
 
         try:
             self.user_id = await self.check_credentials(context)
@@ -335,9 +371,9 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                                                        may_create=may_create)
                 self.sync_group_id = gid
                 self.sync_group_versioned_id = subgid
-                self.log.info('Found top-level group node ID: %s', self.sync_group_id)
-                self.log.info('Found group node ID for %s: %s',
-                              self.blender_version, self.sync_group_versioned_id)
+                self.log.debug('Found top-level group node ID: %s', self.sync_group_id)
+                self.log.debug('Found group node ID for %s: %s',
+                               self.blender_version, self.sync_group_versioned_id)
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Unable to find Group ID')
                 self.bss_report({'ERROR'}, 'Unable to find sync folder.')
@@ -345,12 +381,12 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 return
 
             # Perform the requested action.
-            action = {
+            action_method = {
                 'PUSH': self.action_push,
                 'PULL': self.action_pull,
                 'REFRESH': self.action_refresh,
-            }[self.action]
-            await action(context)
+            }[action]
+            await action_method(context)
         except Exception as ex:
             self.log.exception('Unexpected exception caught.')
             self.bss_report({'ERROR'}, 'Unexpected error: %s' % ex)
@@ -378,16 +414,11 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                                        self.user_id,
                                        future=self.signalling_future)
 
+        await self.action_refresh(context)
         self.bss_report({'INFO'}, 'Settings pushed to Blender Cloud.')
 
     async def action_pull(self, context):
         """Loads files from the Pillar server."""
-
-        # Refuse to start if the file hasn't been saved.
-        if context.blend_data.is_dirty:
-            self.bss_report({'ERROR'}, 'Please save your Blend file before pulling'
-                                   ' settings from the Blender Cloud.')
-            return
 
         # If the sync group node doesn't exist, offer a list of groups that do.
         if self.sync_group_id is None:
@@ -396,7 +427,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
         if self.sync_group_versioned_id is None:
             self.bss_report({'ERROR'}, 'Therre are no synced Blender settings for version %s' %
-                        self.blender_version)
+                            self.blender_version)
             return
 
         self.bss_report({'INFO'}, 'Pulling settings from Blender Cloud')
@@ -405,7 +436,6 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 await self.download_settings_file(fname, tempdir)
 
         self.bss_report({'WARNING'}, 'Settings pulled from Cloud, restart Blender to load them.')
-        self.log.info('at end: self = %r', self)
 
     async def action_refresh(self, context):
         self.bss_report({'INFO'}, 'Refreshing available Blender versions.')
@@ -416,10 +446,9 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
         versions = await available_blender_versions(self.home_project_id, self.user_id)
         bss = bpy.context.window_manager.blender_sync_status
-        bss['available_blender_versions'] = versions
+        bss.available_blender_versions = versions
 
         self.bss_report({'INFO'}, '')
-
 
     async def download_settings_file(self, fname: str, temp_dir: str):
         config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
