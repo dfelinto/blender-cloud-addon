@@ -116,7 +116,7 @@ class BlenderCloudPreferences(AddonPreferences):
             icon = 'ERROR'
             text = 'You are logged out.'
             help_text = 'To login, go to the Blender ID add-on preferences.'
-        elif pillar.SUBCLIENT_ID not in blender_id_profile.subclients:
+        elif bpy.app.debug and pillar.SUBCLIENT_ID not in blender_id_profile.subclients:
             icon = 'QUESTION'
             text = 'No Blender Cloud credentials.'
             help_text = ('You are logged in on Blender ID, but your credentials have not '
@@ -135,7 +135,8 @@ class BlenderCloudPreferences(AddonPreferences):
         help_lines = textwrap.wrap(help_text, 80)
         for line in help_lines:
             auth_box.label(text=line)
-        auth_box.operator("pillar.credentials_update")
+        if bpy.app.debug:
+            auth_box.operator("pillar.credentials_update")
 
         # Texture browser stuff
         texture_box = layout.box()
