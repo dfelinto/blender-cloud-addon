@@ -200,7 +200,9 @@ class MenuItem:
         return self.x < mouse_x < self.x + self.width and self.y < mouse_y < self.y + self.height
 
 
-class BlenderCloudBrowser(async_loop.AsyncModalOperatorMixin, bpy.types.Operator):
+class BlenderCloudBrowser(pillar.PillarOperatorMixin,
+                          async_loop.AsyncModalOperatorMixin,
+                          bpy.types.Operator):
     bl_idname = 'pillar.browser'
     bl_label = 'Blender Cloud Texture Browser'
 
@@ -252,10 +254,10 @@ class BlenderCloudBrowser(async_loop.AsyncModalOperatorMixin, bpy.types.Operator
 
         self.current_display_content = []
         self.loaded_images = set()
-        self.check_credentials()
 
         context.window.cursor_modal_set('DEFAULT')
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
+        self._new_async_task(self.async_execute(context))
 
         return {'RUNNING_MODAL'}
 
@@ -313,42 +315,21 @@ class BlenderCloudBrowser(async_loop.AsyncModalOperatorMixin, bpy.types.Operator
 
         return {'RUNNING_MODAL'}
 
-    def check_credentials(self):
+    async def async_execute(self, context):
         self._state = 'CHECKING_CREDENTIALS'
         self.log.debug('Checking credentials')
-        self._new_async_task(self._check_credentials())
-
-    async def _check_credentials(self):
-        """Checks credentials with Pillar, and if ok goes to the BROWSING state."""
 
         try:
-            await pillar.check_pillar_credentials()
+            user_id = await self.check_credentials(context)
         except pillar.NotSubscribedToCloudError:
             self.log.info('User not subscribed to Blender Cloud.')
             self._show_subscribe_screen()
-            return
-        except pillar.CredentialsNotSyncedError:
-            self.log.info('Credentials not synced, re-syncing automatically.')
-        else:
-            self.log.info('Credentials okay, browsing assets.')
-            await self.async_download_previews()
-            return
+            return None
 
-        try:
-            await pillar.refresh_pillar_credentials()
-        except pillar.NotSubscribedToCloudError:
-            self.log.info('User is not a Blender Cloud subscriber.')
-            self._show_subscribe_screen()
-            return
-        except pillar.UserNotLoggedInError:
-            self.log.error('User not logged in on Blender ID.')
-        else:
-            self.log.info('Credentials refreshed and ok, browsing assets.')
-            await self.async_download_previews()
-            return
+        if user_id is None:
+            raise pillar.UserNotLoggedInError()
 
-        raise pillar.UserNotLoggedInError()
-        # self._new_async_task(self._check_credentials())
+        await self.async_download_previews()
 
     def _show_subscribe_screen(self):
         """Shows the "You need to subscribe" screen."""

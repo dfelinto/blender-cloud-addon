@@ -674,11 +674,8 @@ class PillarOperatorMixin:
         try:
             user_id = await check_pillar_credentials()
         except NotSubscribedToCloudError:
-            self.log.warning(
-                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            self.report({'INFO'},
-                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            return None
+            self._log_subscription_needed()
+            raise
         except CredentialsNotSyncedError:
             self.log.info('Credentials not synced, re-syncing automatically.')
         else:
@@ -688,11 +685,8 @@ class PillarOperatorMixin:
         try:
             user_id = await refresh_pillar_credentials()
         except NotSubscribedToCloudError:
-            self.log.warning(
-                'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            self.report({'INFO'},
-                        'Please subscribe to the blender cloud at https://cloud.blender.org/join')
-            return None
+            self._log_subscription_needed()
+            raise
         except UserNotLoggedInError:
             self.log.error('User not logged in on Blender ID.')
         else:
@@ -700,3 +694,9 @@ class PillarOperatorMixin:
             return user_id
 
         return None
+
+    def _log_subscription_needed(self):
+        self.log.warning(
+            'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+        self.report({'INFO'},
+                    'Please subscribe to the blender cloud at https://cloud.blender.org/join')
