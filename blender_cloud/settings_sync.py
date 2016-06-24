@@ -287,9 +287,10 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         ],
         name='action')
 
+    CURRENT_BLENDER_VERSION = '%i.%i' % bpy.app.version[:2]
     blender_version = bpy.props.StringProperty(name='blender_version',
                                                description='Blender version to sync for',
-                                               default='%i.%i' % bpy.app.version[:2])
+                                               default=CURRENT_BLENDER_VERSION)
 
     def bss_report(self, level, message):
         bss = bpy.context.window_manager.blender_sync_status
@@ -415,6 +416,16 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                                        future=self.signalling_future)
 
         await self.action_refresh(context)
+
+        # After pushing, change the 'pull' version to the current version of Blender.
+        # Or to the latest version, if by some mistake somewhere the current push
+        # isn't available after all.
+        bss = bpy.context.window_manager.blender_sync_status
+        if self.CURRENT_BLENDER_VERSION in bss.available_blender_versions:
+            bss.version = self.CURRENT_BLENDER_VERSION
+        else:
+            bss.version = max(bss.available_blender_versions)
+
         self.bss_report({'INFO'}, 'Settings pushed to Blender Cloud.')
 
     async def action_pull(self, context):
