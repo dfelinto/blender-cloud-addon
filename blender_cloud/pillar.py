@@ -177,9 +177,10 @@ async def pillar_call(pillar_func, *args, caching=True, **kwargs):
         return await loop.run_in_executor(None, partial)
 
 
-async def check_pillar_credentials():
+async def check_pillar_credentials(required_roles: set):
     """Tries to obtain the user at Pillar using the user's credentials.
 
+    :param required_roles: set of roles to require -- having one of those is enough.
     :raises UserNotLoggedInError: when the user is not logged in on Blender ID.
     :raises CredentialsNotSyncedError: when the user is logged in on Blender ID but
         doesn't have a valid subclient token for Pillar.
@@ -203,9 +204,9 @@ async def check_pillar_credentials():
     except (pillarsdk.UnauthorizedAccess, pillarsdk.ResourceNotFound, pillarsdk.ForbiddenAccess):
         raise CredentialsNotSyncedError()
 
-    roles = db_user.roles
+    roles = db_user.roles or set()
     log.debug('User has roles %r', roles)
-    if not roles or not {'subscriber', 'demo'}.intersection(set(roles)):
+    if required_roles and not required_roles.intersection(set(roles)):
         # Delete the subclient info. This forces a re-check later, which can
         # then pick up on the user's new status.
         del profile.subclients[SUBCLIENT_ID]
@@ -215,7 +216,7 @@ async def check_pillar_credentials():
     return pillar_user_id
 
 
-async def refresh_pillar_credentials():
+async def refresh_pillar_credentials(required_roles: set):
     """Refreshes the authentication token on Pillar.
 
     :raises blender_id.BlenderIdCommError: when Blender ID refuses to send a token to Pillar.
@@ -239,7 +240,7 @@ async def refresh_pillar_credentials():
 
     # Test the new URL
     _pillar_api = None
-    return await check_pillar_credentials()
+    return await check_pillar_credentials(required_roles)
 
 
 async def get_project_uuid(project_url: str) -> str:
@@ -259,7 +260,7 @@ async def get_project_uuid(project_url: str) -> str:
 
 
 async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
-                    node_type = None) -> list:
+                    node_type=None) -> list:
     """Gets nodes for either a project or given a parent node.
 
     @param project_uuid: the UUID of the project, or None if only querying by parent_node_uuid.
@@ -662,8 +663,7 @@ def is_cancelled(future: asyncio.Future) -> bool:
 
 
 class PillarOperatorMixin:
-
-    async def check_credentials(self, context) -> bool:
+    async def check_credentials(self, context, required_roles) -> bool:
         """Checks credentials with Pillar, and if ok returns the user ID.
 
         Returns None if the user cannot be found, or if the user is not a Cloud subscriber.
@@ -672,7 +672,7 @@ class PillarOperatorMixin:
         # self.report({'INFO'}, 'Checking Blender Cloud credentials')
 
         try:
-            user_id = await check_pillar_credentials()
+            user_id = await check_pillar_credentials(required_roles)
         except NotSubscribedToCloudError:
             self._log_subscription_needed()
             raise
@@ -683,7 +683,7 @@ class PillarOperatorMixin:
             return user_id
 
         try:
-            user_id = await refresh_pillar_credentials()
+            user_id = await refresh_pillar_credentials(required_roles)
         except NotSubscribedToCloudError:
             self._log_subscription_needed()
             raise

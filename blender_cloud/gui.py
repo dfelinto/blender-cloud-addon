@@ -30,6 +30,8 @@ import os
 import pillarsdk
 from . import async_loop, pillar, cache
 
+REQUIRED_ROLES_FOR_TEXTURE_BROWSER = {'subscriber', 'demo'}
+
 icon_width = 128
 icon_height = 128
 target_item_width = 400
@@ -320,7 +322,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         self.log.debug('Checking credentials')
 
         try:
-            user_id = await self.check_credentials(context)
+            user_id = await self.check_credentials(context, REQUIRED_ROLES_FOR_TEXTURE_BROWSER)
         except pillar.NotSubscribedToCloudError:
             self.log.info('User not subscribed to Blender Cloud.')
             self._show_subscribe_screen()

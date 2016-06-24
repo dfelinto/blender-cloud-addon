@@ -30,6 +30,7 @@ LOCAL_SETTINGS_RNA = [
     (b'tempdir', 'filepaths.temporary_directory'),
 ]
 
+REQUIRES_ROLES_FOR_SYNC = {'subscriber', 'demo'}
 HOME_PROJECT_ENDPOINT = '/bcloud/home-project'
 SYNC_GROUP_NODE_NAME = 'Blender Sync'
 SYNC_GROUP_NODE_DESC = 'The [Blender Cloud Addon](https://cloud.blender.org/services' \
@@ -354,9 +355,22 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         self.log.info('Performing action %s', action)
 
         try:
-            self.user_id = await self.check_credentials(context)
-            log.debug('Found user ID: %s', self.user_id)
+            # Refresh credentials
+            try:
+                self.user_id = await self.check_credentials(context, REQUIRES_ROLES_FOR_SYNC)
+                log.debug('Found user ID: %s', self.user_id)
+            except pillar.NotSubscribedToCloudError:
+                self.log.exception('User not subscribed to cloud.')
+                self.bss_report({'SUBSCRIBE'}, 'Please subscribe to the Blender Cloud.')
+                self._state = 'QUIT'
+                return
+            except pillar.CredentialsNotSyncedError:
+                self.log.exception('Error checking/refreshing credentials.')
+                self.bss_report({'ERROR'}, 'Please log in on Blender ID first.')
+                self._state = 'QUIT'
+                return
 
+            # Find the home project.
             try:
                 self.home_project_id = await get_home_project_id()
             except sdk_exceptions.ForbiddenAccess:
@@ -390,9 +404,6 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 'REFRESH': self.action_refresh,
             }[action]
             await action_method(context)
-        except pillar.CredentialsNotSyncedError:
-            self.log.exception('Error checking/refreshing credentials.')
-            self.bss_report({'ERROR'}, 'Please log in on Blender ID first.')
         except Exception as ex:
             self.log.exception('Unexpected exception caught.')
             self.bss_report({'ERROR'}, 'Unexpected error: %s' % ex)

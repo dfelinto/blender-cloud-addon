@@ -52,6 +52,7 @@ class SyncStatusProperties(PropertyGroup):
             ('INFO', 'INFO', ''),
             ('WARNING', 'WARNING', ''),
             ('ERROR', 'ERROR', ''),
+            ('SUBSCRIBE', 'SUBSCRIBE', ''),
         ],
         name='level',
         update=redraw)
@@ -64,7 +65,11 @@ class SyncStatusProperties(PropertyGroup):
         # Message can also be empty, just to erase it from the GUI.
         # No need to actually log those.
         if message:
-            log.log(logging._nameToLevel[self.level], message)
+            try:
+                loglevel = logging._nameToLevel[self.level]
+            except KeyError:
+                loglevel = logging.WARNING
+            log.log(loglevel, message)
 
     # List of syncable versions is stored in 'available_blender_versions' ID property,
     # because I don't know how to store a variable list of strings in a proper RNA property.
@@ -157,15 +162,25 @@ class BlenderCloudPreferences(AddonPreferences):
             'INFO': 'NONE',
             'WARNING': 'INFO',
             'ERROR': 'ERROR',
+            'SUBSCRIBE': 'ERROR',
         }
         message_container = row.row()
         message_container.label(bss.message, icon=icon_for_level[bss.level])
-        message_container.alert = True  # bss.level in {'WARNING', 'ERROR'}
 
         sub = bsync_box.column()
-        sub.enabled = bss.status in {'NONE', 'IDLE'}
 
-        buttons = sub.column()
+        if bss.level == 'SUBSCRIBE':
+            self.draw_subscribe_button(sub)
+        else:
+            self.draw_sync_buttons(sub, bss)
+
+    def draw_subscribe_button(self, layout):
+        layout.operator('pillar.subscribe', icon='WORLD')
+
+    def draw_sync_buttons(self, layout, bss):
+        layout.enabled = bss.status in {'NONE', 'IDLE'}
+
+        buttons = layout.column()
         row_buttons = buttons.row().split(percentage=0.5)
         row_pull = row_buttons.row(align=True)
         row_push = row_buttons.row()
@@ -194,7 +209,8 @@ class BlenderCloudPreferences(AddonPreferences):
             row_pull.label('Cloud Sync is running.')
 
 
-class PillarCredentialsUpdate(Operator):
+class PillarCredentialsUpdate(pillar.PillarOperatorMixin,
+                              Operator):
     """Updates the Pillar URL and tests the new URL."""
     bl_idname = 'pillar.credentials_update'
     bl_label = 'Update credentials'
@@ -224,7 +240,7 @@ class PillarCredentialsUpdate(Operator):
 
         try:
             loop = asyncio.get_event_loop()
-            loop.run_until_complete(pillar.refresh_pillar_credentials())
+            loop.run_until_complete(self.check_credentials(context, set()))
         except blender_id.BlenderIdCommError as ex:
             log.exception('Error sending subclient-specific token to Blender ID')
             self.report({'ERROR'}, 'Failed to sync Blender ID to Blender Cloud')
@@ -238,6 +254,20 @@ class PillarCredentialsUpdate(Operator):
         return {'FINISHED'}
 
 
+class PILLAR_OT_subscribe(Operator):
+    """Opens a browser to subscribe the user to the Cloud."""
+    bl_idname = 'pillar.subscribe'
+    bl_label = 'Subscribe to the Cloud'
+
+    def execute(self, context):
+        import webbrowser
+
+        webbrowser.open_new_tab('https://cloud.blender.org/join')
+        self.report({'INFO'}, 'We just started a browser for you.')
+
+        return {'FINISHED'}
+
+
 def preferences() -> BlenderCloudPreferences:
     return bpy.context.user_preferences.addons[ADDON_NAME].preferences
 
@@ -246,6 +276,7 @@ def register():
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
     bpy.utils.register_class(SyncStatusProperties)
+    bpy.utils.register_class(PILLAR_OT_subscribe)
 
     addon_prefs = preferences()
 
@@ -274,6 +305,7 @@ def unregister():
     bpy.utils.unregister_class(PillarCredentialsUpdate)
     bpy.utils.unregister_class(BlenderCloudPreferences)
     bpy.utils.unregister_class(SyncStatusProperties)
+    bpy.utils.unregister_class(PILLAR_OT_subscribe)
 
     del WindowManager.last_blender_cloud_location
     del WindowManager.blender_sync_status
