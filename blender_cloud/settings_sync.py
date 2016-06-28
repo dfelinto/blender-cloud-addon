@@ -18,7 +18,7 @@ from pillarsdk import exceptions as sdk_exceptions
 from .pillar import pillar_call
 from . import async_loop, pillar, cache, blendfile
 
-SETTINGS_FILES_TO_UPLOAD = ['bookmarks.txt', 'recent-files.txt', 'userpref.blend', 'startup.blend']
+SETTINGS_FILES_TO_UPLOAD = ['userpref.blend', 'startup.blend']
 
 # These are RNA keys inside the userpref.blend file, and their
 # Python properties names.
