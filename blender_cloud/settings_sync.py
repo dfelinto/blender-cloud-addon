@@ -473,7 +473,11 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         bss = bpy.context.window_manager.blender_sync_status
         bss.available_blender_versions = versions
 
-        self.bss_report({'INFO'}, '')
+        if versions:
+            # There are versions to sync, so we can remove the status message.
+            # However, if there aren't any, the status message shows why, and
+            # shouldn't be erased.
+            self.bss_report({'INFO'}, '')
 
     async def download_settings_file(self, fname: str, temp_dir: str):
         config_dir = pathlib.Path(bpy.utils.user_resource('CONFIG'))
