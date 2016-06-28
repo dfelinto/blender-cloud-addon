@@ -99,7 +99,8 @@ async def find_sync_group_id(home_project_id: str,
     If the group node doesn't exist and may_create=True, it creates it.
     """
 
-    # Find/create the top-level sync group node.
+    # Find the top-level sync group node. This should have been
+    # created by Pillar while creating the home project.
     try:
         sync_group, created = await find_or_create_node(
             where={'project': home_project_id,
@@ -107,14 +108,10 @@ async def find_sync_group_id(home_project_id: str,
                    'parent': None,
                    'name': SYNC_GROUP_NODE_NAME,
                    'user': user_id},
-            additional_create_props={
-                'description': SYNC_GROUP_NODE_DESC,
-                'properties': {'status': 'published'},
-            },
             projection={'_id': 1},
-            may_create=may_create)
+            may_create=False)
     except pillar.PillarError:
-        raise pillar.PillarError('Unable to create sync folder on the Cloud')
+        raise pillar.PillarError('Unable to find sync folder on the Cloud')
 
     if not may_create and sync_group is None:
         log.info("Sync folder doesn't exist, and not creating it either.")
@@ -146,7 +143,7 @@ async def find_sync_group_id(home_project_id: str,
 
 
 async def find_or_create_node(where: dict,
-                              additional_create_props: dict,
+                              additional_create_props: dict = None,
                               projection: dict = None,
                               may_create: bool = True) -> (pillarsdk.Node, bool):
     """Finds a node by the `filter_props`, creates it using the additional props.
@@ -172,7 +169,8 @@ async def find_or_create_node(where: dict,
 
         # Augment the node properties to form a complete node.
         node_props = where.copy()
-        node_props.update(additional_create_props)
+        if additional_create_props:
+            node_props.update(additional_create_props)
 
         found_node = pillarsdk.Node.new(node_props)
         created_ok = await pillar_call(found_node.create)
