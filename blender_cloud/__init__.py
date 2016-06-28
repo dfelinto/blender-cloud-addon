@@ -81,8 +81,8 @@ def register():
     async_loop.setup_asyncio_executor()
     async_loop.register()
 
-    blender.register()
     gui.register()
+    blender.register()
     settings_sync.register()
 
 
@@ -106,7 +106,7 @@ def _monkey_patch_requests():
 def unregister():
     from . import blender, gui, async_loop, settings_sync
 
-    gui.unregister()
-    blender.unregister()
-    async_loop.unregister()
     settings_sync.unregister()
+    blender.unregister()
+    gui.unregister()
+    async_loop.unregister()

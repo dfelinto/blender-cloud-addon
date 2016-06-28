@@ -742,13 +742,10 @@ def register():
 
 
 def unregister():
-    bpy.utils.unregister_class(BlenderCloudBrowser)
-
     # handle the keymap
     for km, kmi in addon_keymaps:
         km.keymap_items.remove(kmi)
     addon_keymaps.clear()
 
-
-if __name__ == "__main__":
-    register()
+    if 'bl_rna' in BlenderCloudBrowser.__dict__:   # <-- check if we already removed!
+        bpy.utils.unregister_class(BlenderCloudBrowser)
