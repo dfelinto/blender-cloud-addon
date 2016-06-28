@@ -30,7 +30,7 @@ LOCAL_SETTINGS_RNA = [
     (b'tempdir', 'filepaths.temporary_directory'),
 ]
 
-REQUIRES_ROLES_FOR_SYNC = {'subscriber', 'demo'}
+REQUIRES_ROLES_FOR_SYNC = set()  # no roles needed.
 HOME_PROJECT_ENDPOINT = '/bcloud/home-project'
 SYNC_GROUP_NODE_NAME = 'Blender Sync'
 SYNC_GROUP_NODE_DESC = 'The [Blender Cloud Addon](https://cloud.blender.org/services' \
