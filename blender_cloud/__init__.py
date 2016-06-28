@@ -32,6 +32,8 @@ bl_info = {
     'support': 'OFFICIAL'
 }
 
+import logging
+
 # Support reloading
 if 'pillar' in locals():
     import importlib
@@ -43,15 +45,20 @@ if 'pillar' in locals():
     cache = importlib.reload(cache)
 else:
     from . import wheels
+
     wheels.load_wheels()
 
     from . import pillar, cache
+
+log = logging.getLogger(__name__)
 
 
 def register():
     """Late-loads and registers the Blender-dependent submodules."""
 
     import sys
+
+    _monkey_patch_requests()
 
     # Support reloading
     if '%s.blender' % __name__ in sys.modules:
@@ -79,6 +86,23 @@ def register():
     settings_sync.register()
 
 
+def _monkey_patch_requests():
+    """Monkey-patch old versions of Requests.
+
+    This is required for the Mac version of Blender 2.77a.
+    """
+
+    import requests
+
+    if requests.__build__ >= 0x020601:
+        return
+
+    log.info('Monkey-patching requests version %s', requests.__version__)
+    from requests.packages.urllib3.response import HTTPResponse
+    HTTPResponse.chunked = False
+    HTTPResponse.chunk_left = None
+
+
 def unregister():
     from . import blender, gui, async_loop, settings_sync
 
@@ -86,4 +110,3 @@ def unregister():
     blender.unregister()
     async_loop.unregister()
     settings_sync.unregister()
-
