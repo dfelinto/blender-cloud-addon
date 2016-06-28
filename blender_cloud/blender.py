@@ -156,7 +156,7 @@ class BlenderCloudPreferences(AddonPreferences):
         bsync_box = layout.box()
         bsync_box.enabled = icon != 'ERROR'
         row = bsync_box.row().split(percentage=0.33)
-        row.label('Blender Sync')
+        row.label('Blender Sync with Blender Cloud')
 
         icon_for_level = {
             'INFO': 'NONE',
@@ -164,8 +164,9 @@ class BlenderCloudPreferences(AddonPreferences):
             'ERROR': 'ERROR',
             'SUBSCRIBE': 'ERROR',
         }
+        icon = icon_for_level[bss.level] if bss.message else 'NONE'
         message_container = row.row()
-        message_container.label(bss.message, icon=icon_for_level[bss.level])
+        message_container.label(bss.message, icon=icon)
 
         sub = bsync_box.column()
 
@@ -182,11 +183,11 @@ class BlenderCloudPreferences(AddonPreferences):
 
         buttons = layout.column()
         row_buttons = buttons.row().split(percentage=0.5)
-        row_pull = row_buttons.row(align=True)
         row_push = row_buttons.row()
+        row_pull = row_buttons.row(align=True)
 
         row_push.operator('pillar.sync',
-                          text='Save %i.%i settings to Cloud' % bpy.app.version[:2],
+                          text='Save %i.%i settings' % bpy.app.version[:2],
                           icon='TRIA_UP').action = 'PUSH'
 
         versions = bss.available_blender_versions
@@ -194,11 +195,11 @@ class BlenderCloudPreferences(AddonPreferences):
         if bss.status in {'NONE', 'IDLE'}:
             if not versions or not version:
                 row_pull.operator('pillar.sync',
-                                  text='Find version to load from Cloud',
+                                  text='Find version to load',
                                   icon='TRIA_DOWN').action = 'REFRESH'
             else:
                 props = row_pull.operator('pillar.sync',
-                                          text='Load %s settings from Cloud' % version,
+                                          text='Load %s settings' % version,
                                           icon='TRIA_DOWN')
                 props.action = 'PULL'
                 props.blender_version = version

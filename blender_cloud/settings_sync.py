@@ -274,6 +274,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                      bpy.types.Operator):
     bl_idname = 'pillar.sync'
     bl_label = 'Synchronise with Blender Cloud'
+    bl_description = 'Synchronises Blender settings with Blender Cloud'
 
     log = logging.getLogger('bpy.ops.%s' % bl_idname)
     home_project_id = None
@@ -331,7 +332,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
     def draw(self, context):
         bss = bpy.context.window_manager.blender_sync_status
-        self.layout.prop(bss, 'version')
+        self.layout.prop(bss, 'version', text='Blender version')
 
     def execute(self, context):
         if self.action != 'SELECT':
