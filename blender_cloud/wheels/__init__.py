@@ -31,7 +31,9 @@ def load_wheel(module_name, fname_prefix):
     if not wheels:
         raise RuntimeError('Unable to find wheel at %r' % path_pattern)
 
-    sys.path.append(wheels[0])
+    # If there are multiple wheels that match, load the latest one.
+    wheels.sort()
+    sys.path.append(wheels[-1])
     module = __import__(module_name)
     log.debug('Loaded %s from %s', module_name, module.__file__)
 
