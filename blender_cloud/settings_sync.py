@@ -79,7 +79,10 @@ async def get_home_project(params=None) -> pillarsdk.Project:
                                  HOME_PROJECT_ENDPOINT, params=params)
     except sdk_exceptions.ForbiddenAccess:
         log.warning('Access to the home project was denied. '
-                    'Double-check that you are a cloud subscriber and logged in.')
+                    'Double-check that you are logged in with valid BlenderID credentials.')
+        raise
+    except sdk_exceptions.ResourceNotFound:
+        log.warning('No home project available.')
         raise
 
 
@@ -374,6 +377,10 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Forbidden access to home project.')
                 self.bss_report({'ERROR'}, 'Did not get access to home project.')
+                self._state = 'QUIT'
+                return
+            except sdk_exceptions.ResourceNotFound:
+                self.bss_report({'ERROR'}, 'Home project not found.')
                 self._state = 'QUIT'
                 return
 
