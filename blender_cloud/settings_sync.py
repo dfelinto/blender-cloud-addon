@@ -21,13 +21,22 @@ from . import async_loop, pillar, cache, blendfile
 SETTINGS_FILES_TO_UPLOAD = ['userpref.blend', 'startup.blend']
 
 # These are RNA keys inside the userpref.blend file, and their
-# Python properties names.
+# Python properties names. These settings will not be synced.
 LOCAL_SETTINGS_RNA = [
     (b'dpi', 'system.dpi'),
     (b'virtual_pixel', 'system.virtual_pixel_mode'),
     (b'compute_device_id', 'system.compute_device'),
     (b'compute_device_type', 'system.compute_device_type'),
+    (b'fontdir', 'filepaths.font_directory'),
+    (b'textudir', 'filepaths.texture_directory'),
+    (b'renderdir', 'filepaths.render_output_directory'),
+    (b'pythondir', 'filepaths.script_directory'),
+    (b'sounddir', 'filepaths.sound_directory'),
     (b'tempdir', 'filepaths.temporary_directory'),
+    (b'render_cachedir', 'filepaths.render_cache_directory'),
+    (b'i18ndir', 'filepaths.i18n_branches_directory'),
+    (b'image_editor', 'filepaths.image_editor'),
+    (b'anim_player', 'filepaths.animation_player'),
 ]
 
 REQUIRES_ROLES_FOR_SYNC = set()  # no roles needed.
