@@ -26,7 +26,7 @@ def blender_syncable_versions(self, context):
     bss = context.window_manager.blender_sync_status
     versions = bss.available_blender_versions
     if not versions:
-        return [('', 'No settings stored in your home project.', '')]
+        return [('', 'No settings stored in your Blender Cloud', '')]
     return [(v, v, '') for v in versions]
 
 

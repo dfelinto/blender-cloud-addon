@@ -250,7 +250,7 @@ async def available_blender_versions(home_project_id: str, user_id: str) -> list
         caching=False)
 
     if sync_group is None:
-        bss.report({'ERROR'}, 'No synced Blender settings in your home project')
+        bss.report({'ERROR'}, 'No synced Blender settings in your Blender Cloud')
         log.debug('-- unable to find sync group for home_project_id=%r and user_id=%r',
                   home_project_id, user_id)
         return []
@@ -268,7 +268,7 @@ async def available_blender_versions(home_project_id: str, user_id: str) -> list
         caching=False)
 
     if not sync_nodes or not sync_nodes._items:
-        bss.report({'ERROR'}, 'No synced Blender settings in your home project')
+        bss.report({'ERROR'}, 'No synced Blender settings in your Blender Cloud.')
         return []
 
     versions = [node.name for node in sync_nodes._items]
@@ -464,7 +464,8 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
         # If the sync group node doesn't exist, offer a list of groups that do.
         if self.sync_group_id is None:
-            self.bss_report({'ERROR'}, 'There are no synced Blender settings in your home project.')
+            self.bss_report({'ERROR'},
+                            'There are no synced Blender settings in your Blender Cloud.')
             return
 
         if self.sync_group_versioned_id is None:
