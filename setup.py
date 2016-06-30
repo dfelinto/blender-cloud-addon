@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
 import glob
 import sys
 import shutil
@@ -14,6 +15,7 @@ from distutils.command.install_egg_info import install_egg_info
 from setuptools import setup, find_packages
 
 requirement_re = re.compile('[><=]+')
+sys.dont_write_bytecode = True
 
 
 def set_default_path(var, default):
