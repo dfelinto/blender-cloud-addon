@@ -24,6 +24,8 @@ Installing the addon
 
 * If you don't have one already, sign up for an account at
   the [Blender ID site](https://www.blender.org/id/).
+* If you had a previous version of the addon installed, deactivate it
+  and restart Blender.
 * Install and log in with the
   [Blender ID addon](https://developer.blender.org/diffusion/BIA/).
 * Install the Blender Cloud addon in Blender (User Preferences →
