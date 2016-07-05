@@ -16,7 +16,7 @@ import asyncio
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
 from .pillar import pillar_call
-from . import async_loop, pillar, cache, blendfile
+from . import async_loop, pillar, cache, blendfile, home_project
 
 SETTINGS_FILES_TO_UPLOAD = ['userpref.blend', 'startup.blend']
 
@@ -40,7 +40,6 @@ LOCAL_SETTINGS_RNA = [
 ]
 
 REQUIRES_ROLES_FOR_SYNC = set()  # no roles needed.
-HOME_PROJECT_ENDPOINT = '/bcloud/home-project'
 SYNC_GROUP_NODE_NAME = 'Blender Sync'
 SYNC_GROUP_NODE_DESC = 'The [Blender Cloud Addon](https://cloud.blender.org/services' \
                        '#blender-addon) will synchronize your Blender settings here.'
@@ -79,28 +78,6 @@ def async_set_blender_sync_status(set_status: str):
     return decorator
 
 
-async def get_home_project(params=None) -> pillarsdk.Project:
-    """Returns the home project."""
-
-    log.debug('Getting home project')
-    try:
-        return await pillar_call(pillarsdk.Project.find_from_endpoint,
-                                 HOME_PROJECT_ENDPOINT, params=params)
-    except sdk_exceptions.ForbiddenAccess:
-        log.warning('Access to the home project was denied. '
-                    'Double-check that you are logged in with valid BlenderID credentials.')
-        raise
-    except sdk_exceptions.ResourceNotFound:
-        log.warning('No home project available.')
-        raise
-
-
-async def get_home_project_id():
-    home_proj = await get_home_project({'projection': {'_id': 1}})
-    home_proj_id = home_proj['_id']
-    return home_proj_id
-
-
 async def find_sync_group_id(home_project_id: str,
                              user_id: str,
                              blender_version: str,
@@ -114,7 +91,7 @@ async def find_sync_group_id(home_project_id: str,
     # Find the top-level sync group node. This should have been
     # created by Pillar while creating the home project.
     try:
-        sync_group, created = await find_or_create_node(
+        sync_group, created = await pillar.find_or_create_node(
             where={'project': home_project_id,
                    'node_type': 'group',
                    'parent': None,
@@ -131,7 +108,7 @@ async def find_sync_group_id(home_project_id: str,
 
     # Find/create the sub-group for the requested Blender version
     try:
-        sub_sync_group, created = await find_or_create_node(
+        sub_sync_group, created = await pillar.find_or_create_node(
             where={'project': home_project_id,
                    'node_type': 'group',
                    'parent': sync_group['_id'],
@@ -152,63 +129,6 @@ async def find_sync_group_id(home_project_id: str,
         return sync_group['_id'], None
 
     return sync_group['_id'], sub_sync_group['_id']
-
-
-async def find_or_create_node(where: dict,
-                              additional_create_props: dict = None,
-                              projection: dict = None,
-                              may_create: bool = True) -> (pillarsdk.Node, bool):
-    """Finds a node by the `filter_props`, creates it using the additional props.
-
-    :returns: tuple (node, created), where 'created' is a bool indicating whether
-              a new node was created, or an exising one is returned.
-    """
-
-    params = {
-        'where': where,
-    }
-    if projection:
-        params['projection'] = projection
-
-    found_node = await pillar_call(pillarsdk.Node.find_first, params, caching=False)
-
-    created = False
-    if found_node is None:
-        if not may_create:
-            return None, False
-
-        log.info('Creating new sync group node')
-
-        # Augment the node properties to form a complete node.
-        node_props = where.copy()
-        if additional_create_props:
-            node_props.update(additional_create_props)
-
-        found_node = pillarsdk.Node.new(node_props)
-        created_ok = await pillar_call(found_node.create)
-        if not created_ok:
-            log.error('Blender Cloud addon: unable to create node on the Cloud.')
-            raise pillar.PillarError('Unable to create node on the Cloud')
-        created = True
-
-    return found_node, created
-
-
-async def attach_file_to_group(file_path: pathlib.Path,
-                               home_project_id: str,
-                               group_node_id: str,
-                               user_id: str,
-                               *,
-                               future=None) -> pillarsdk.Node:
-    """Creates an Asset node and attaches a file document to it."""
-
-    node = await pillar_call(pillarsdk.Node.create_asset_from_file,
-                             home_project_id,
-                             group_node_id,
-                             'file',
-                             str(file_path))
-
-    return node
 
 
 @functools.lru_cache()
@@ -362,7 +282,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
 
             # Find the home project.
             try:
-                self.home_project_id = await get_home_project_id()
+                self.home_project_id = await home_project.get_home_project_id()
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Forbidden access to home project.')
                 self.bss_report({'ERROR'}, 'Did not get access to home project.')
@@ -418,12 +338,15 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 self.log.debug('Skipping non-existing %s', path)
                 continue
 
+            if self.signalling_future.cancelled():
+                self.bss_report({'WARNING'}, 'Upload aborted.')
+                return
+
             self.bss_report({'INFO'}, 'Uploading %s' % fname)
-            await attach_file_to_group(path,
-                                       self.home_project_id,
-                                       self.sync_group_versioned_id,
-                                       self.user_id,
-                                       future=self.signalling_future)
+            await pillar.attach_file_to_group(path,
+                                              self.home_project_id,
+                                              self.sync_group_versioned_id,
+                                              self.user_id)
 
         await self.action_refresh(context)
 

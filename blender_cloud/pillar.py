@@ -700,3 +700,59 @@ class PillarOperatorMixin:
             'Please subscribe to the blender cloud at https://cloud.blender.org/join')
         self.report({'INFO'},
                     'Please subscribe to the blender cloud at https://cloud.blender.org/join')
+
+
+async def find_or_create_node(where: dict,
+                              additional_create_props: dict = None,
+                              projection: dict = None,
+                              may_create: bool = True) -> (pillarsdk.Node, bool):
+    """Finds a node by the `filter_props`, creates it using the additional props.
+
+    :returns: tuple (node, created), where 'created' is a bool indicating whether
+              a new node was created, or an exising one is returned.
+    """
+
+    params = {
+        'where': where,
+    }
+    if projection:
+        params['projection'] = projection
+
+    found_node = await pillar_call(pillarsdk.Node.find_first, params, caching=False)
+
+    created = False
+    if found_node is None:
+        if not may_create:
+            return None, False
+
+        log.info('Creating new sync group node')
+
+        # Augment the node properties to form a complete node.
+        node_props = where.copy()
+        if additional_create_props:
+            node_props.update(additional_create_props)
+
+        found_node = pillarsdk.Node.new(node_props)
+        created_ok = await pillar_call(found_node.create)
+        if not created_ok:
+            log.error('Blender Cloud addon: unable to create node on the Cloud.')
+            raise PillarError('Unable to create node on the Cloud')
+        created = True
+
+    return found_node, created
+
+
+async def attach_file_to_group(file_path: pathlib.Path,
+                               home_project_id: str,
+                               group_node_id: str,
+                               user_id: str=None) -> pillarsdk.Node:
+    """Creates an Asset node and attaches a file document to it."""
+
+    node = await pillar_call(pillarsdk.Node.create_asset_from_file,
+                             home_project_id,
+                             group_node_id,
+                             'file',
+                             str(file_path),
+                             extra_where=user_id and {'user': user_id})
+
+    return node

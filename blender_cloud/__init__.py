@@ -74,9 +74,11 @@ def register():
         gui = reload_mod('gui')
         async_loop = reload_mod('async_loop')
         settings_sync = reload_mod('settings_sync')
+
         reload_mod('blendfile')
+        reload_mod('home_project')
     else:
-        from . import blender, gui, async_loop, settings_sync, blendfile
+        from . import blender, gui, async_loop, settings_sync, blendfile, home_project
 
     async_loop.setup_asyncio_executor()
     async_loop.register()
