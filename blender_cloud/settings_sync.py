@@ -202,32 +202,11 @@ async def attach_file_to_group(file_path: pathlib.Path,
                                future=None) -> pillarsdk.Node:
     """Creates an Asset node and attaches a file document to it."""
 
-    # First upload the file...
-    file_id = await pillar.upload_file(home_project_id, file_path,
-                                       future=future)
-
-    # Then attach it to a node.
-    node, created = await find_or_create_node(
-        where={
-            'project': home_project_id,
-            'node_type': 'asset',
-            'parent': group_node_id,
-            'name': file_path.name,
-            'user': user_id},
-        additional_create_props={
-            'properties': {'file': file_id},
-        })
-
-    if not created:
-        # Update the existing node.
-        node.properties = {'file': file_id}
-        updated_ok = await pillar_call(node.update)
-        if not updated_ok:
-            log.error(
-                'Blender Cloud addon: unable to update asset node on the Cloud for file %s.',
-                file_path)
-            raise pillar.PillarError(
-                'Unable to update asset node on the Cloud for file %s' % file_path.name)
+    node = await pillar_call(pillarsdk.Node.create_asset_from_file,
+                             home_project_id,
+                             group_node_id,
+                             'file',
+                             str(file_path))
 
     return node
 
