@@ -1,5 +1,5 @@
 import logging
-import pathlib
+import os.path
 import tempfile
 
 import bpy
@@ -123,11 +123,11 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
 
         self.report({'INFO'}, 'Uploading %s %s' % (self.target.lower(), self.name))
         if self.target == 'FILE':
-            await self.upload_file(pathlib.Path(self.name))
+            await self.upload_file(self.name)
         else:
-            await self.upload_datablock()
+            await self.upload_datablock(context)
 
-    async def upload_file(self, filename: pathlib.Path):
+    async def upload_file(self, filename: str):
         """Uploads a file to the cloud, attached to the image sharing node."""
 
         self.log.info('Uploading file %s', filename)
@@ -135,7 +135,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                                  self.home_project_id,
                                  self.share_group_id,
                                  'image',
-                                 str(filename),
+                                 filename,
                                  extra_where={'user': self.user_id})
         self.log.info('Created node %s', node['_id'])
         self.report({'INFO'}, 'File succesfully uploaded to the cloud!')
@@ -146,11 +146,24 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         self.log.info('Opening browser at %s', url)
         webbrowser.open_new_tab(url)
 
-    async def upload_datablock(self):
+    async def upload_datablock(self, context):
         """Saves a datablock to file if necessary, then upload."""
 
         self.log.info('Uploading datablock %s' % self.name)
         datablock = bpy.data.images[self.name]
+
+        if datablock.type == 'RENDER_RESULT':
+            render_fname_suffix = context.scene.render.file_extension
+            with tempfile.TemporaryDirectory() as tmpdir:
+                filename = '%s-%s-render%s' % (
+                    os.path.splitext(os.path.basename(context.blend_data.filepath))[0],
+                    context.scene.name,
+                    render_fname_suffix)
+                filepath = os.path.join(tmpdir, filename)
+                self.log.debug('Saving render to %s', filepath)
+                datablock.save_render(filepath)
+                await self.upload_file(filepath)
+            return
 
         if datablock.is_dirty:
             # TODO: support dirty datablocks.
@@ -162,7 +175,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             self.report({'ERROR'}, 'Packed files are not supported yet.')
             return
 
-        filepath = pathlib.Path(bpy.path.abspath(datablock.filepath))
+        filepath = bpy.path.abspath(datablock.filepath)
         await self.upload_file(filepath)
 
 
