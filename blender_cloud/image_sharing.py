@@ -74,6 +74,9 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         self._new_async_task(self.async_execute(context))
         return {'RUNNING_MODAL'}
 
+    def execute(self, context):
+        return self.invoke(context, None)
+
     async def async_execute(self, context):
         """Entry point of the asynchronous operator."""
 
