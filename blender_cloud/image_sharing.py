@@ -59,6 +59,14 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                                     description='File or datablock name to sync')
 
     def invoke(self, context, event):
+        # Do a quick test on datablock dirtyness. If it's not packed and dirty,
+        # the user should save it first.
+        if self.target == 'DATABLOCK':
+            datablock = bpy.data.images[self.name]
+            if datablock.type == 'IMAGE' and datablock.is_dirty and not datablock.packed_file:
+                self.report({'ERROR'}, 'Datablock is dirty, save it first.')
+                return {'CANCELLED'}
+
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
         self.log.info('Starting sharing')
@@ -149,25 +157,27 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
     async def upload_datablock(self, context):
         """Saves a datablock to file if necessary, then upload."""
 
-        self.log.info('Uploading datablock %s' % self.name)
+        self.log.info("Uploading datablock '%s'" % self.name)
         datablock = bpy.data.images[self.name]
 
         if datablock.type == 'RENDER_RESULT':
-            render_fname_suffix = context.scene.render.file_extension
-            with tempfile.TemporaryDirectory() as tmpdir:
-                filename = '%s-%s-render%s' % (
-                    os.path.splitext(os.path.basename(context.blend_data.filepath))[0],
-                    context.scene.name,
-                    render_fname_suffix)
-                filepath = os.path.join(tmpdir, filename)
-                self.log.debug('Saving render to %s', filepath)
-                datablock.save_render(filepath)
-                await self.upload_file(filepath)
+            # Construct a sensible name for this render.
+            filename = '%s-%s-render%s' % (
+                os.path.splitext(os.path.basename(context.blend_data.filepath))[0],
+                context.scene.name,
+                context.scene.render.file_extension)
+            await self.upload_via_tempdir(datablock, filename)
             return
 
         if datablock.is_dirty:
-            # TODO: support dirty datablocks.
-            self.report({'ERROR'}, 'Datablock is dirty, save it first.')
+            # We can handle dirty datablocks like this if we want.
+            # However, I (Sybren) do NOT think it's a good idea to:
+            # - Share unsaved data to the cloud; users can assume it's saved
+            #   to disk and close blender, losing their file.
+            # - Save unsaved data first; this can overwrite a file a user
+            #   didn't want to overwrite.
+            filename = bpy.path.basename(datablock.filepath)
+            await self.upload_via_tempdir(datablock, filename)
             return
 
         if datablock.packed_file is not None:
@@ -178,15 +188,32 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         filepath = bpy.path.abspath(datablock.filepath)
         await self.upload_file(filepath)
 
+    async def upload_via_tempdir(self, datablock, filename_on_cloud):
+        """Saves the datablock to file, and uploads it to the cloud.
+
+        Saving is done to a temporary directory, which is removed afterwards.
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = os.path.join(tmpdir, filename_on_cloud)
+            self.log.debug('Saving %s to %s', datablock, filepath)
+            datablock.save_render(filepath)
+            await self.upload_file(filepath)
+
 
 def image_editor_menu(self, context):
     image = context.space_data.image
 
+    box = self.layout.row()
     if image and image.has_data:
-        props = self.layout.operator(PILLAR_OT_image_share.bl_idname,
-                                     text='Share on Blender Cloud')
+        text = 'Share on Blender Cloud'
+        if image.type == 'IMAGE' and image.is_dirty and not image.packed_file:
+            box.enabled = False
+            text = 'Save image before sharing on Blender Cloud'
+
+        props = box.operator(PILLAR_OT_image_share.bl_idname, text=text)
         props.target = 'DATABLOCK'
-        props.name = context.space_data.image.name
+        props.name = image.name
 
 
 def register():
