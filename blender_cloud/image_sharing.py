@@ -144,7 +144,9 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                                  self.share_group_id,
                                  'image',
                                  filename,
-                                 extra_where={'user': self.user_id})
+                                 extra_where={'user': self.user_id},
+                                 always_create_new_node=True,
+                                 caching=False)
         self.log.info('Created node %s', node['_id'])
         self.report({'INFO'}, 'File succesfully uploaded to the cloud!')
 
