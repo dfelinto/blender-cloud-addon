@@ -720,32 +720,31 @@ async def find_or_create_node(where: dict,
 
     found_node = await pillar_call(pillarsdk.Node.find_first, params, caching=False)
 
-    created = False
-    if found_node is None:
-        if not may_create:
-            return None, False
+    if found_node is not None:
+        return found_node, False
 
-        log.info('Creating new sync group node')
+    if not may_create:
+        return None, False
 
-        # Augment the node properties to form a complete node.
-        node_props = where.copy()
-        if additional_create_props:
-            node_props.update(additional_create_props)
+    # Augment the node properties to form a complete node.
+    node_props = where.copy()
+    if additional_create_props:
+        node_props.update(additional_create_props)
 
-        found_node = pillarsdk.Node.new(node_props)
-        created_ok = await pillar_call(found_node.create)
-        if not created_ok:
-            log.error('Blender Cloud addon: unable to create node on the Cloud.')
-            raise PillarError('Unable to create node on the Cloud')
-        created = True
+    log.debug('Creating new node %s', node_props)
+    created_node = pillarsdk.Node.new(node_props)
+    created_ok = await pillar_call(created_node.create)
+    if not created_ok:
+        log.error('Blender Cloud addon: unable to create node on the Cloud.')
+        raise PillarError('Unable to create node on the Cloud')
 
-    return found_node, created
+    return created_node, True
 
 
 async def attach_file_to_group(file_path: pathlib.Path,
                                home_project_id: str,
                                group_node_id: str,
-                               user_id: str=None) -> pillarsdk.Node:
+                               user_id: str = None) -> pillarsdk.Node:
     """Creates an Asset node and attaches a file document to it."""
 
     node = await pillar_call(pillarsdk.Node.create_asset_from_file,
