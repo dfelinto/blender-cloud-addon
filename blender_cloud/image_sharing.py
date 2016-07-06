@@ -53,7 +53,8 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             ('FILE', 'File', 'Upload an image file'),
             ('DATABLOCK', 'Datablock', 'Upload an image datablock'),
         ],
-        name='target')
+        name='target',
+        default='DATABLOCK')
 
     name = bpy.props.StringProperty(name='name',
                                     description='File or datablock name to sync')
