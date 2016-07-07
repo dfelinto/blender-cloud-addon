@@ -126,7 +126,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             await self.share_image(context)
         except Exception as ex:
             self.log.exception('Unexpected exception caught.')
-            self.report({'ERROR'}, 'Unexpected error: %s' % ex)
+            self.report({'ERROR'}, 'Unexpected error %s: %s' % (type(ex), ex))
 
         self._state = 'QUIT'
 
@@ -139,7 +139,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         else:
             await self.upload_datablock(context)
 
-    async def upload_file(self, filename: str):
+    async def upload_file(self, filename: str, fileobj=None):
         """Uploads a file to the cloud, attached to the image sharing node."""
 
         self.log.info('Uploading file %s', filename)
@@ -150,6 +150,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                                  filename,
                                  extra_where={'user': self.user_id},
                                  always_create_new_node=True,
+                                 fileobj=fileobj,
                                  caching=False)
         self.log.info('Created node %s', node['_id'])
         self.report({'INFO'}, 'File succesfully uploaded to the cloud!')
@@ -175,6 +176,10 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             await self.upload_via_tempdir(datablock, filename)
             return
 
+        if datablock.packed_file is not None:
+            await self.upload_packed_file(datablock)
+            return
+
         if datablock.is_dirty:
             # We can handle dirty datablocks like this if we want.
             # However, I (Sybren) do NOT think it's a good idea to:
@@ -184,11 +189,6 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             #   didn't want to overwrite.
             filename = bpy.path.basename(datablock.filepath)
             await self.upload_via_tempdir(datablock, filename)
-            return
-
-        if datablock.packed_file is not None:
-            # TODO: support packed files.
-            self.report({'ERROR'}, 'Packed files are not supported yet.')
             return
 
         filepath = bpy.path.abspath(datablock.filepath)
@@ -205,6 +205,16 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             self.log.debug('Saving %s to %s', datablock, filepath)
             datablock.save_render(filepath)
             await self.upload_file(filepath)
+
+    async def upload_packed_file(self, datablock):
+
+        import io
+
+        filename = '%s.%s' % (datablock.name, datablock.file_format.lower())
+        fileobj = io.BytesIO(datablock.packed_file.data)
+        fileobj.seek(0)  # ensure PillarSDK reads the file from the beginning.
+        self.log.info('Uploading packed file directly from memory to %r.', filename)
+        await self.upload_file(filename, fileobj=fileobj)
 
 
 def image_editor_menu(self, context):
