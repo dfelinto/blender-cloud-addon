@@ -146,9 +146,9 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
 
         self.report({'INFO'}, 'Upload complete, creating link to share.')
         share_info = await pillar_call(node.share)
-        url = share_info.get('theatre_link', share_info.get('short_link'))
+        url = share_info.get('short_link')
         context.window_manager.clipboard = url
-        self.report({'INFO'}, 'The link has been copied to your clipboard')
+        self.report({'INFO'}, 'The link has been copied to your clipboard: %s' % url)
 
         await self.maybe_open_browser(url)
 
