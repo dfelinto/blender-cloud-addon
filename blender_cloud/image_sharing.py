@@ -199,12 +199,10 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                 os.path.splitext(os.path.basename(context.blend_data.filepath))[0],
                 context.scene.name,
                 context.scene.render.file_extension)
-            await self.upload_via_tempdir(datablock, filename)
-            return
+            return await self.upload_via_tempdir(datablock, filename)
 
         if datablock.packed_file is not None:
-            await self.upload_packed_file(datablock)
-            return
+            return await self.upload_packed_file(datablock)
 
         if datablock.is_dirty:
             # We can handle dirty datablocks like this if we want.
@@ -214,8 +212,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             # - Save unsaved data first; this can overwrite a file a user
             #   didn't want to overwrite.
             filename = bpy.path.basename(datablock.filepath)
-            await self.upload_via_tempdir(datablock, filename)
-            return
+            return await self.upload_via_tempdir(datablock, filename)
 
         filepath = bpy.path.abspath(datablock.filepath)
         return await self.upload_file(filepath)
