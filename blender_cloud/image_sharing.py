@@ -141,12 +141,23 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
 
         self.report({'INFO'}, 'Uploading %s %s' % (self.target.lower(), self.name))
         if self.target == 'FILE':
-            await self.upload_file(self.name)
+            node = await self.upload_file(self.name)
         else:
-            await self.upload_datablock(context)
+            node = await self.upload_datablock(context)
 
-    async def upload_file(self, filename: str, fileobj=None):
-        """Uploads a file to the cloud, attached to the image sharing node."""
+        self.report({'INFO'}, 'Upload complete, creating link to share.')
+        share_info = await pillar_call(node.share)
+        url = share_info.get('theatre_link', share_info.get('short_link'))
+        context.window_manager.clipboard = url
+        self.report({'INFO'}, 'The link has been copied to your clipboard')
+
+        await self.maybe_open_browser(url)
+
+    async def upload_file(self, filename: str, fileobj=None) -> pillarsdk.Node:
+        """Uploads a file to the cloud, attached to the image sharing node.
+
+        Returns the node.
+        """
 
         self.log.info('Uploading file %s', filename)
         node = await pillar_call(pillarsdk.Node.create_asset_from_file,
@@ -162,7 +173,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         self.log.info('Created node %s', node_id)
         self.report({'INFO'}, 'File succesfully uploaded to the cloud!')
 
-        await self.maybe_open_browser(node_id)
+        return node
 
     async def maybe_open_browser(self, node_id):
         prefs = preferences()
@@ -177,8 +188,11 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         self.log.info('Opening browser at %s', url)
         webbrowser.open_new_tab(url)
 
-    async def upload_datablock(self, context):
-        """Saves a datablock to file if necessary, then upload."""
+    async def upload_datablock(self, context) -> pillarsdk.Node:
+        """Saves a datablock to file if necessary, then upload.
+
+        Returns the node.
+        """
 
         self.log.info("Uploading datablock '%s'" % self.name)
         datablock = bpy.data.images[self.name]
@@ -208,21 +222,27 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             return
 
         filepath = bpy.path.abspath(datablock.filepath)
-        await self.upload_file(filepath)
+        return await self.upload_file(filepath)
 
-    async def upload_via_tempdir(self, datablock, filename_on_cloud):
+    async def upload_via_tempdir(self, datablock, filename_on_cloud) -> pillarsdk.Node:
         """Saves the datablock to file, and uploads it to the cloud.
 
         Saving is done to a temporary directory, which is removed afterwards.
+
+        Returns the node.
         """
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, filename_on_cloud)
             self.log.debug('Saving %s to %s', datablock, filepath)
             datablock.save_render(filepath)
-            await self.upload_file(filepath)
+            return await self.upload_file(filepath)
 
-    async def upload_packed_file(self, datablock):
+    async def upload_packed_file(self, datablock) -> pillarsdk.Node:
+        """Uploads a packed file directly from memory.
+
+        Returns the node.
+        """
 
         import io
 
@@ -230,7 +250,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         fileobj = io.BytesIO(datablock.packed_file.data)
         fileobj.seek(0)  # ensure PillarSDK reads the file from the beginning.
         self.log.info('Uploading packed file directly from memory to %r.', filename)
-        await self.upload_file(filename, fileobj=fileobj)
+        return await self.upload_file(filename, fileobj=fileobj)
 
 
 def image_editor_menu(self, context):
