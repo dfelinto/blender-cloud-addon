@@ -6,8 +6,7 @@ import bpy
 import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
 from .pillar import pillar_call
-from . import async_loop, pillar, home_project
-from .blender import PILLAR_WEB_SERVER_URL, preferences
+from . import async_loop, pillar, home_project, blender
 
 REQUIRES_ROLES_FOR_IMAGE_SHARING = {'subscriber', 'demo'}
 IMAGE_SHARING_GROUP_NODE_NAME = 'Image sharing'
@@ -175,16 +174,13 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
 
         return node
 
-    async def maybe_open_browser(self, node_id):
-        prefs = preferences()
+    async def maybe_open_browser(self, url):
+        prefs = blender.preferences()
         if not prefs.open_browser_after_share:
             return
 
         import webbrowser
-        import urllib.parse
 
-        url = urllib.parse.urljoin(PILLAR_WEB_SERVER_URL,
-                                   '/p/%s/%s' % (self.home_project_url, node_id))
         self.log.info('Opening browser at %s', url)
         webbrowser.open_new_tab(url)
 
