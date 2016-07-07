@@ -7,7 +7,7 @@ import pillarsdk
 from pillarsdk import exceptions as sdk_exceptions
 from .pillar import pillar_call
 from . import async_loop, pillar, home_project
-from .blender import PILLAR_WEB_SERVER_URL
+from .blender import PILLAR_WEB_SERVER_URL, preferences
 
 REQUIRES_ROLES_FOR_IMAGE_SHARING = {'subscriber', 'demo'}
 IMAGE_SHARING_GROUP_NODE_NAME = 'Image sharing'
@@ -45,6 +45,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
     log = logging.getLogger('bpy.ops.%s' % bl_idname)
 
     home_project_id = None
+    home_project_url = 'home'
     share_group_id = None  # top-level share group node ID
     user_id = None
 
@@ -101,7 +102,9 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
 
             # Find the home project.
             try:
-                self.home_project_id = await home_project.get_home_project_id()
+                home_proj = await home_project.get_home_project({
+                    'projection': {'_id': 1, 'url': 1}
+                })
             except sdk_exceptions.ForbiddenAccess:
                 self.log.exception('Forbidden access to home project.')
                 self.report({'ERROR'}, 'Did not get access to home project.')
@@ -111,6 +114,9 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                 self.report({'ERROR'}, 'Home project not found.')
                 self._state = 'QUIT'
                 return
+
+            self.home_project_id = home_proj['_id']
+            self.home_project_url = home_proj['url']
 
             try:
                 gid = await find_image_sharing_group_id(self.home_project_id,
@@ -152,12 +158,22 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                                  always_create_new_node=True,
                                  fileobj=fileobj,
                                  caching=False)
-        self.log.info('Created node %s', node['_id'])
+        node_id = node['_id']
+        self.log.info('Created node %s', node_id)
         self.report({'INFO'}, 'File succesfully uploaded to the cloud!')
+
+        await self.maybe_open_browser(node_id)
+
+    async def maybe_open_browser(self, node_id):
+        prefs = preferences()
+        if not prefs.open_browser_after_share:
+            return
 
         import webbrowser
         import urllib.parse
-        url = urllib.parse.urljoin(PILLAR_WEB_SERVER_URL, '/p/p-home/%s' % node['_id'])
+
+        url = urllib.parse.urljoin(PILLAR_WEB_SERVER_URL,
+                                   '/p/%s/%s' % (self.home_project_url, node_id))
         self.log.info('Opening browser at %s', url)
         webbrowser.open_new_tab(url)
 

@@ -7,7 +7,7 @@ import logging
 
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene, PropertyGroup
-from bpy.props import StringProperty, EnumProperty, PointerProperty
+from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty
 
 from . import pillar, gui
 
@@ -101,6 +101,12 @@ class BlenderCloudPreferences(AddonPreferences):
         subtype='DIR_PATH',
         default='//textures')
 
+    open_browser_after_share = BoolProperty(
+        name='Open browser after sharing file',
+        description='When enabled, Blender will open a webbrowser',
+        default=True
+    )
+
     def draw(self, context):
         import textwrap
 
@@ -176,6 +182,12 @@ class BlenderCloudPreferences(AddonPreferences):
             self.draw_subscribe_button(sub)
         else:
             self.draw_sync_buttons(sub, bss)
+
+        # Image Share stuff
+        share_box = layout.box()
+        share_box.label('Image Sharing on Blender Cloud')
+        texture_box.enabled = icon != 'ERROR'
+        share_box.prop(self, 'open_browser_after_share')
 
     def draw_subscribe_button(self, layout):
         layout.operator('pillar.subscribe', icon='WORLD')
