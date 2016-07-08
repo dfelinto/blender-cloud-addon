@@ -180,8 +180,7 @@ class BlenderCloudPreferences(AddonPreferences):
 
         if bss.level == 'SUBSCRIBE':
             self.draw_subscribe_button(sub)
-        else:
-            self.draw_sync_buttons(sub, bss)
+        self.draw_sync_buttons(sub, bss)
 
         # Image Share stuff
         share_box = layout.box()

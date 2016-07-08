@@ -343,10 +343,18 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 return
 
             self.bss_report({'INFO'}, 'Uploading %s' % fname)
-            await pillar.attach_file_to_group(path,
-                                              self.home_project_id,
-                                              self.sync_group_versioned_id,
-                                              self.user_id)
+            try:
+                await pillar.attach_file_to_group(path,
+                                                  self.home_project_id,
+                                                  self.sync_group_versioned_id,
+                                                  self.user_id)
+            except sdk_exceptions.RequestEntityTooLarge as ex:
+                self.log.error('File too big to upload: %s' % ex)
+                self.log.error('To upload larger files, please subscribe to Blender Cloud.')
+                self.bss_report({'SUBSCRIBE'}, 'File %s too big to upload. '
+                                               'Subscribe for unlimited space.' % fname)
+                self._state = 'QUIT'
+                return
 
         await self.action_refresh(context)
 

@@ -138,7 +138,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
     async def share_image(self, context):
         """Sends files to the Pillar server."""
 
-        self.report({'INFO'}, 'Uploading %s %s' % (self.target.lower(), self.name))
+        self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
         if self.target == 'FILE':
             node = await self.upload_file(self.name)
         else:
