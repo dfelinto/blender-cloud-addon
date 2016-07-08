@@ -12,9 +12,7 @@ from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolPropert
 from . import pillar, gui
 
 PILLAR_SERVER_URL = 'https://cloudapi.blender.org/'
-PILLAR_WEB_SERVER_URL = 'https://cloudapi.blender.org/'
 # PILLAR_SERVER_URL = 'http://localhost:5000/'
-# PILLAR_WEB_SERVER_URL = 'http://pillar_web:5001/'
 
 ADDON_NAME = 'blender_cloud'
 log = logging.getLogger(__name__)
