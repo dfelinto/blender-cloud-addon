@@ -4,6 +4,7 @@ Separated from __init__.py so that we can import & run from non-Blender environm
 """
 
 import logging
+import os.path
 
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene, PropertyGroup
@@ -16,6 +17,8 @@ PILLAR_SERVER_URL = 'https://cloudapi.blender.org/'
 
 ADDON_NAME = 'blender_cloud'
 log = logging.getLogger(__name__)
+
+icons = None
 
 
 def redraw(self, context):
@@ -120,28 +123,28 @@ class BlenderCloudPreferences(AddonPreferences):
             blender_id_profile = blender_id.get_active_profile()
 
         if blender_id is None:
-            icon = 'ERROR'
+            msg_icon = 'ERROR'
             text = 'This add-on requires Blender ID'
             help_text = 'Make sure that the Blender ID add-on is installed and activated'
         elif not blender_id_profile:
-            icon = 'ERROR'
+            msg_icon = 'ERROR'
             text = 'You are logged out.'
             help_text = 'To login, go to the Blender ID add-on preferences.'
         elif bpy.app.debug and pillar.SUBCLIENT_ID not in blender_id_profile.subclients:
-            icon = 'QUESTION'
+            msg_icon = 'QUESTION'
             text = 'No Blender Cloud credentials.'
             help_text = ('You are logged in on Blender ID, but your credentials have not '
                          'been synchronized with Blender Cloud yet. Press the Update '
                          'Credentials button.')
         else:
-            icon = 'WORLD_DATA'
+            msg_icon = 'WORLD_DATA'
             text = 'You are logged in as %s.' % blender_id_profile.username
             help_text = ('To logout or change profile, '
                          'go to the Blender ID add-on preferences.')
 
         # Authentication stuff
         auth_box = layout.box()
-        auth_box.label(text=text, icon=icon)
+        auth_box.label(text=text, icon=msg_icon)
 
         help_lines = textwrap.wrap(help_text, 80)
         for line in help_lines:
@@ -151,18 +154,18 @@ class BlenderCloudPreferences(AddonPreferences):
 
         # Texture browser stuff
         texture_box = layout.box()
-        texture_box.enabled = icon != 'ERROR'
+        texture_box.enabled = msg_icon != 'ERROR'
         sub = texture_box.column()
-        sub.label(text='Local directory for downloaded textures')
+        sub.label(text='Local directory for downloaded textures', icon_value=icon('CLOUD'))
         sub.prop(self, "local_texture_dir", text='Default')
         sub.prop(context.scene, "local_texture_dir", text='Current scene')
 
         # Blender Sync stuff
         bss = context.window_manager.blender_sync_status
         bsync_box = layout.box()
-        bsync_box.enabled = icon != 'ERROR'
+        bsync_box.enabled = msg_icon != 'ERROR'
         row = bsync_box.row().split(percentage=0.33)
-        row.label('Blender Sync with Blender Cloud')
+        row.label('Blender Sync with Blender Cloud', icon_value=icon('CLOUD'))
 
         icon_for_level = {
             'INFO': 'NONE',
@@ -170,9 +173,9 @@ class BlenderCloudPreferences(AddonPreferences):
             'ERROR': 'ERROR',
             'SUBSCRIBE': 'ERROR',
         }
-        icon = icon_for_level[bss.level] if bss.message else 'NONE'
+        msg_icon = icon_for_level[bss.level] if bss.message else 'NONE'
         message_container = row.row()
-        message_container.label(bss.message, icon=icon)
+        message_container.label(bss.message, icon=msg_icon)
 
         sub = bsync_box.column()
 
@@ -182,8 +185,8 @@ class BlenderCloudPreferences(AddonPreferences):
 
         # Image Share stuff
         share_box = layout.box()
-        share_box.label('Image Sharing on Blender Cloud')
-        texture_box.enabled = icon != 'ERROR'
+        share_box.label('Image Sharing on Blender Cloud', icon_value=icon('CLOUD'))
+        texture_box.enabled = msg_icon != 'ERROR'
         share_box.prop(self, 'open_browser_after_share')
 
     def draw_subscribe_button(self, layout):
@@ -284,6 +287,39 @@ def preferences() -> BlenderCloudPreferences:
     return bpy.context.user_preferences.addons[ADDON_NAME].preferences
 
 
+def load_custom_icons():
+    global icons
+
+    if icons is not None:
+        # Already loaded
+        return
+
+    import bpy.utils.previews
+    icons = bpy.utils.previews.new()
+    my_icons_dir = os.path.join(os.path.dirname(__file__), 'icons')
+    icons.load('CLOUD', os.path.join(my_icons_dir, 'icon-cloud.png'), 'IMAGE')
+
+
+def unload_custom_icons():
+    global icons
+
+    if icons is None:
+        # Already unloaded
+        return
+
+    bpy.utils.previews.remove(icons)
+    icons = None
+
+
+def icon(icon_name: str) -> int:
+    """Returns the icon ID for the named icon.
+
+    Use with layout.operator('pillar.image_share', icon_value=icon('CLOUD'))
+    """
+
+    return icons[icon_name].icon_id
+
+
 def register():
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
@@ -310,8 +346,12 @@ def register():
 
     WindowManager.blender_sync_status = PointerProperty(type=SyncStatusProperties)
 
+    load_custom_icons()
+
 
 def unregister():
+    unload_custom_icons()
+
     gui.unregister()
 
     bpy.utils.unregister_class(PillarCredentialsUpdate)

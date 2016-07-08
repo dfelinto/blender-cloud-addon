@@ -256,7 +256,8 @@ def image_editor_menu(self, context):
             box.enabled = False
             text = 'Save image before sharing on Blender Cloud'
 
-        props = box.operator(PILLAR_OT_image_share.bl_idname, text=text)
+        props = box.operator(PILLAR_OT_image_share.bl_idname, text=text,
+                             icon_value=blender.icon('CLOUD'))
         props.target = 'DATABLOCK'
         props.name = image.name
 
