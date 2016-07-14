@@ -1,6 +1,7 @@
 import logging
 import os.path
 import tempfile
+import datetime
 
 import bpy
 import pillarsdk
@@ -50,14 +51,20 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
 
     target = bpy.props.EnumProperty(
         items=[
-            ('FILE', 'File', 'Upload an image file'),
-            ('DATABLOCK', 'Datablock', 'Upload an image datablock'),
+            ('FILE', 'File', 'Share an image file'),
+            ('DATABLOCK', 'Datablock', 'Share an image datablock'),
+            ('SCREENSHOT', 'Screenshot', 'Share a screenshot'),
         ],
         name='target',
         default='DATABLOCK')
 
     name = bpy.props.StringProperty(name='name',
                                     description='File or datablock name to sync')
+
+    screenshot_full = bpy.props.BoolProperty(
+        name='screenshot_full',
+        description='Full Screen, Capture the whole window (otherwise only capture the active area)',
+        default=True)
 
     def invoke(self, context, event):
         # Do a quick test on datablock dirtyness. If it's not packed and dirty,
@@ -141,6 +148,8 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
         if self.target == 'FILE':
             node = await self.upload_file(self.name)
+        elif self.target == 'SCREENSHOT':
+            node = await self.upload_screenshot(context)
         else:
             node = await self.upload_datablock(context)
 
@@ -244,6 +253,17 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         fileobj.seek(0)  # ensure PillarSDK reads the file from the beginning.
         self.log.info('Uploading packed file directly from memory to %r.', filename)
         return await self.upload_file(filename, fileobj=fileobj)
+
+    async def upload_screenshot(self, context) -> pillarsdk.Node:
+        """Takes a screenshot, saves it to a temp file, and uploads it."""
+
+        filename_on_cloud = datetime.datetime.now().strftime('Screenshot-%Y-%m-%d-%H:%M:%S.png')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = os.path.join(tmpdir, filename_on_cloud)
+            self.log.debug('Saving screenshot to %s', filepath)
+            bpy.ops.screen.screenshot(filepath=filepath, full=self.screenshot_full)
+            return await self.upload_file(filepath)
 
 
 def image_editor_menu(self, context):
