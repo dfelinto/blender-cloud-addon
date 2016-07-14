@@ -39,7 +39,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                             async_loop.AsyncModalOperatorMixin,
                             bpy.types.Operator):
     bl_idname = 'pillar.image_share'
-    bl_label = 'Share an image via Blender Cloud'
+    bl_label = 'Share an image/screenshot via Blender Cloud'
     bl_description = 'Uploads an image for sharing via Blender Cloud'
 
     log = logging.getLogger('bpy.ops.%s' % bl_idname)
@@ -56,20 +56,34 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
             ('SCREENSHOT', 'Screenshot', 'Share a screenshot'),
         ],
         name='target',
-        default='DATABLOCK')
+        default='SCREENSHOT')
 
     name = bpy.props.StringProperty(name='name',
                                     description='File or datablock name to sync')
 
+    screenshot_show_multiview = bpy.props.BoolProperty(
+        name='screenshot_show_multiview',
+        description='Enable Multi-View',
+        default=False)
+
+    screenshot_use_multiview = bpy.props.BoolProperty(
+        name='screenshot_use_multiview',
+        description='Use Multi-View',
+        default=False)
+
     screenshot_full = bpy.props.BoolProperty(
         name='screenshot_full',
         description='Full Screen, Capture the whole window (otherwise only capture the active area)',
-        default=True)
+        default=False)
 
     def invoke(self, context, event):
         # Do a quick test on datablock dirtyness. If it's not packed and dirty,
         # the user should save it first.
         if self.target == 'DATABLOCK':
+            if not self.name:
+                self.report({'ERROR'}, 'No name given of the datablock to share.')
+                return {'CANCELLED'}
+
             datablock = bpy.data.images[self.name]
             if datablock.type == 'IMAGE' and datablock.is_dirty and not datablock.packed_file:
                 self.report({'ERROR'}, 'Datablock is dirty, save it first.')
@@ -145,12 +159,13 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
     async def share_image(self, context):
         """Sends files to the Pillar server."""
 
-        self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
         if self.target == 'FILE':
+            self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
             node = await self.upload_file(self.name)
         elif self.target == 'SCREENSHOT':
             node = await self.upload_screenshot(context)
         else:
+            self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
             node = await self.upload_datablock(context)
 
         self.report({'INFO'}, 'Upload complete, creating link to share.')
@@ -257,12 +272,16 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
     async def upload_screenshot(self, context) -> pillarsdk.Node:
         """Takes a screenshot, saves it to a temp file, and uploads it."""
 
-        filename_on_cloud = datetime.datetime.now().strftime('Screenshot-%Y-%m-%d-%H:%M:%S.png')
+        self.name = datetime.datetime.now().strftime('Screenshot-%Y-%m-%d-%H:%M:%S.png')
+        self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            filepath = os.path.join(tmpdir, filename_on_cloud)
+            filepath = os.path.join(tmpdir, self.name)
             self.log.debug('Saving screenshot to %s', filepath)
-            bpy.ops.screen.screenshot(filepath=filepath, full=self.screenshot_full)
+            bpy.ops.screen.screenshot(filepath=filepath,
+                                      show_multiview=self.screenshot_show_multiview,
+                                      use_multiview=self.screenshot_use_multiview,
+                                      full=self.screenshot_full)
             return await self.upload_file(filepath)
 
 
@@ -282,13 +301,23 @@ def image_editor_menu(self, context):
         props.name = image.name
 
 
+def window_menu(self, context):
+    props = self.layout.operator(PILLAR_OT_image_share.bl_idname,
+                                 text='Share screenshot via Blender Cloud',
+                                 icon_value=blender.icon('CLOUD'))
+    props.target = 'SCREENSHOT'
+    props.screenshot_full = True
+
+
 def register():
     bpy.utils.register_class(PILLAR_OT_image_share)
 
     bpy.types.IMAGE_HT_header.append(image_editor_menu)
+    bpy.types.INFO_MT_window.append(window_menu)
 
 
 def unregister():
     bpy.utils.unregister_class(PILLAR_OT_image_share)
 
     bpy.types.IMAGE_HT_header.remove(image_editor_menu)
+    bpy.types.INFO_MT_window.remove(window_menu)
