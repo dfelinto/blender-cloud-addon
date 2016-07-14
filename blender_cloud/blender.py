@@ -230,6 +230,8 @@ class PillarCredentialsUpdate(pillar.PillarOperatorMixin,
     bl_idname = 'pillar.credentials_update'
     bl_label = 'Update credentials'
 
+    log = logging.getLogger('bpy.ops.%s' % bl_idname)
+
     @classmethod
     def poll(cls, context):
         # Only allow activation when the user is actually logged in.
