@@ -21,11 +21,11 @@
 import asyncio
 import logging
 import threading
+import os
 
 import bpy
 import bgl
 import blf
-import os
 
 import pillarsdk
 from . import async_loop, pillar, cache
