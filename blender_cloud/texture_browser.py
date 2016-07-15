@@ -32,10 +32,13 @@ from . import async_loop, pillar, cache
 
 REQUIRED_ROLES_FOR_TEXTURE_BROWSER = {'subscriber', 'demo'}
 
-icon_width = 128
-icon_height = 128
-target_item_width = 400
-target_item_height = 128
+ICON_WIDTH = 128
+ICON_HEIGHT = 128
+TARGET_ITEM_WIDTH = 400
+TARGET_ITEM_HEIGHT = 128
+ITEM_MARGIN_X = 5
+ITEM_MARGIN_Y = 5
+ITEM_PADDING_X = 5
 
 library_path = '/tmp'
 library_icons_path = os.path.join(os.path.dirname(__file__), "icons")
@@ -179,11 +182,11 @@ class MenuItem:
         bgl.glTexCoord2d(0, 0)
         bgl.glVertex2d(self.x + self.icon_margin_x, self.y)
         bgl.glTexCoord2d(0, 1)
-        bgl.glVertex2d(self.x + self.icon_margin_x, self.y + icon_height)
+        bgl.glVertex2d(self.x + self.icon_margin_x, self.y + ICON_HEIGHT)
         bgl.glTexCoord2d(1, 1)
-        bgl.glVertex2d(self.x + self.icon_margin_x + icon_width, self.y + icon_height)
+        bgl.glVertex2d(self.x + self.icon_margin_x + ICON_WIDTH, self.y + ICON_HEIGHT)
         bgl.glTexCoord2d(1, 0)
-        bgl.glVertex2d(self.x + self.icon_margin_x + icon_width, self.y)
+        bgl.glVertex2d(self.x + self.icon_margin_x + ICON_WIDTH, self.y)
         bgl.glEnd()
         bgl.glDisable(bgl.GL_TEXTURE_2D)
         bgl.glDisable(bgl.GL_BLEND)
@@ -193,8 +196,8 @@ class MenuItem:
         # draw some text
         font_id = 0
         blf.position(font_id,
-                     self.x + self.icon_margin_x + icon_width + self.text_margin_x,
-                     self.y + icon_height * 0.5 - 0.25 * self.text_height, 0)
+                     self.x + self.icon_margin_x + ICON_WIDTH + self.text_margin_x,
+                     self.y + ICON_HEIGHT * 0.5 - 0.25 * self.text_height, 0)
         blf.size(font_id, self.text_height, self.text_width)
         blf.draw(font_id, self.label_text)
 
@@ -534,24 +537,20 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
     def _draw_browser(self, context):
         """OpenGL drawing code for the BROWSING state."""
 
-        margin_x = 5
-        margin_y = 5
-        padding_x = 5
-
         window_region = self._window_region(context)
-        content_width = window_region.width - margin_x * 2
-        content_height = window_region.height - margin_y * 2
+        content_width = window_region.width - ITEM_MARGIN_X * 2
+        content_height = window_region.height - ITEM_MARGIN_Y * 2
 
-        content_x = margin_x
-        content_y = context.area.height - margin_y - target_item_height
+        content_x = ITEM_MARGIN_X
+        content_y = context.area.height - ITEM_MARGIN_Y - TARGET_ITEM_HEIGHT
 
-        col_count = content_width // target_item_width
+        col_count = content_width // TARGET_ITEM_WIDTH
 
-        item_width = (content_width - (col_count * padding_x)) / col_count
-        item_height = target_item_height
+        item_width = (content_width - (col_count * ITEM_PADDING_X)) / col_count
+        item_height = TARGET_ITEM_HEIGHT
 
-        block_width = item_width + padding_x
-        block_height = item_height + margin_y
+        block_width = item_width + ITEM_PADDING_X
+        block_height = item_height + ITEM_MARGIN_Y
 
         bgl.glEnable(bgl.GL_BLEND)
         bgl.glColor4f(0.0, 0.0, 0.0, 0.6)
