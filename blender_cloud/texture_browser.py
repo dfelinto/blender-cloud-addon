@@ -31,6 +31,7 @@ import pillarsdk
 from . import async_loop, pillar, cache
 
 REQUIRED_ROLES_FOR_TEXTURE_BROWSER = {'subscriber', 'demo'}
+MOUSE_SCROLL_PIXELS_PER_TICK = 50
 
 ICON_WIDTH = 128
 ICON_HEIGHT = 128
@@ -230,6 +231,8 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
 
     mouse_x = 0
     mouse_y = 0
+    scroll_offset = 0
+    scroll_offset_target = 0
 
     def invoke(self, context, event):
         # Refuse to start if the file hasn't been saved.
@@ -259,6 +262,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
 
         self.current_display_content = []
         self.loaded_images = set()
+        self._scroll_reset()
 
         context.window.cursor_modal_set('DEFAULT')
         async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
@@ -276,6 +280,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             async_loop.ensure_async_loop()
 
         if event.type == 'TIMER':
+            self._scroll_smooth()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
 
@@ -297,6 +302,14 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
                 context.window.cursor_set('HAND')
             else:
                 context.window.cursor_set('DEFAULT')
+
+            # Scrolling
+            if event.type == 'WHEELUPMOUSE':
+                self._scroll_by(MOUSE_SCROLL_PIXELS_PER_TICK)
+                context.area.tag_redraw()
+            elif event.type == 'WHEELDOWNMOUSE':
+                self._scroll_by(-MOUSE_SCROLL_PIXELS_PER_TICK)
+                context.area.tag_redraw()
 
             if left_mouse_release:
                 if selected is None:
@@ -445,6 +458,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         self.log.info('Asynchronously downloading previews to %r', thumbnails_directory)
         self.log.info('Current BCloud path is %r', self.current_path)
         self.clear_images()
+        self._scroll_reset()
 
         def thumbnail_loading(node, texture_node):
             self.add_menu_item(node, None, 'SPINNER', texture_node['name'])
@@ -557,12 +571,20 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         bgl.glRectf(0, 0, window_region.width, window_region.height)
 
         if self.current_display_content:
+            # The -1 / +2 are for extra rows that are drawn only half at the top/bottom.
+            first_item_idx = max(0, int(-self.scroll_offset // block_height - 1) * col_count)
+            items_per_page = int(content_height // item_height + 2) * col_count
+            last_item_idx = first_item_idx + items_per_page
+
             for item_idx, item in enumerate(self.current_display_content):
                 x = content_x + (item_idx % col_count) * block_width
-                y = content_y - (item_idx // col_count) * block_height
+                y = content_y - (item_idx // col_count) * block_height - self.scroll_offset
 
                 item.update_placement(x, y, item_width, item_height)
-                item.draw(highlighted=item.hits(self.mouse_x, self.mouse_y))
+
+                if first_item_idx <= item_idx < last_item_idx:
+                    # Only draw if the item is actually on screen.
+                    item.draw(highlighted=item.hits(self.mouse_x, self.mouse_y))
         else:
             font_id = 0
             text = "Communicating with Blender Cloud"
@@ -712,6 +734,23 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         webbrowser.open_new_tab('https://cloud.blender.org/join')
 
         self.report({'INFO'}, 'We just started a browser for you.')
+
+    def _scroll_smooth(self):
+        diff = self.scroll_offset_target - self.scroll_offset
+        if diff == 0:
+            return
+
+        if abs(round(diff)) < 1:
+            self.scroll_offset = self.scroll_offset_target
+            return
+
+        self.scroll_offset += diff * 0.5
+
+    def _scroll_by(self, amount):
+        self.scroll_offset_target = min(0, self.scroll_offset_target + amount)
+
+    def _scroll_reset(self):
+        self.scroll_offset_target = self.scroll_offset = 0
 
 
 # store keymaps here to access after registration
