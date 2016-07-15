@@ -312,12 +312,12 @@ def window_menu(self, context):
 def register():
     bpy.utils.register_class(PILLAR_OT_image_share)
 
-    bpy.types.IMAGE_HT_header.append(image_editor_menu)
+    bpy.types.IMAGE_MT_image.append(image_editor_menu)
     bpy.types.INFO_MT_window.append(window_menu)
 
 
 def unregister():
     bpy.utils.unregister_class(PILLAR_OT_image_share)
 
-    bpy.types.IMAGE_HT_header.remove(image_editor_menu)
+    bpy.types.IMAGE_MT_image.remove(image_editor_menu)
     bpy.types.INFO_MT_window.remove(window_menu)
