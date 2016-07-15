@@ -260,7 +260,7 @@ async def get_project_uuid(project_url: str) -> str:
 
 
 async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
-                    node_type=None) -> list:
+                    node_type=None, max_results=None) -> list:
     """Gets nodes for either a project or given a parent node.
 
     @param project_uuid: the UUID of the project, or None if only querying by parent_node_uuid.
@@ -290,23 +290,34 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
         else:
             where['node_type'] = {'$in': node_type}
 
-    children = await pillar_call(pillarsdk.Node.all, {
-        'projection': {'name': 1, 'parent': 1, 'node_type': 1,
-                       'properties.order': 1, 'properties.status': 1,
-                       'properties.files': 1,
-                       'properties.content_type': 1, 'picture': 1},
-        'where': where,
-        'embed': ['parent']})
+    params = {'projection': {'name': 1, 'parent': 1, 'node_type': 1, 'properties.order': 1,
+                             'properties.status': 1, 'properties.files': 1,
+                             'properties.content_type': 1, 'picture': 1},
+              'where': where,
+              'embed': ['parent']}
+
+    # Pagination
+    if max_results:
+        params['max_results'] = int(max_results)
+
+    children = await pillar_call(pillarsdk.Node.all, params)
 
     return children['_items']
 
 
-async def get_texture_projects() -> list:
+async def get_texture_projects(max_results=None) -> list:
     """Returns project dicts that contain textures."""
+
+    params = {}
+
+    # Pagination
+    if max_results:
+        params['max_results'] = int(max_results)
 
     try:
         children = await pillar_call(pillarsdk.Project.all_from_endpoint,
-                                     '/bcloud/texture-libraries')
+                                     '/bcloud/texture-libraries',
+                                     params=params)
     except pillarsdk.ResourceNotFound as ex:
         log.warning('Unable to find texture projects: %s', ex)
         raise PillarError('Unable to find texture projects: %s' % ex)
