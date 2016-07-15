@@ -10,7 +10,7 @@ import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene, PropertyGroup
 from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty
 
-from . import pillar, gui
+from . import pillar
 
 PILLAR_SERVER_URL = 'https://cloudapi.blender.org/'
 # PILLAR_SERVER_URL = 'http://localhost:5000/'
@@ -353,8 +353,6 @@ def register():
 
 def unregister():
     unload_custom_icons()
-
-    gui.unregister()
 
     bpy.utils.unregister_class(PillarCredentialsUpdate)
     bpy.utils.unregister_class(BlenderCloudPreferences)

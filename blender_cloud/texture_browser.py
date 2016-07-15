@@ -747,5 +747,4 @@ def unregister():
         km.keymap_items.remove(kmi)
     addon_keymaps.clear()
 
-    if 'bl_rna' in BlenderCloudBrowser.__dict__:   # <-- check if we already removed!
-        bpy.utils.unregister_class(BlenderCloudBrowser)
+    bpy.utils.unregister_class(BlenderCloudBrowser)

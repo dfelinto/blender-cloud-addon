@@ -74,18 +74,18 @@ def register():
         reload_mod('home_project')
 
         blender = reload_mod('blender')
-        gui = reload_mod('gui')
         async_loop = reload_mod('async_loop')
+        texture_browser = reload_mod('texture_browser')
         settings_sync = reload_mod('settings_sync')
         image_sharing = reload_mod('image_sharing')
     else:
-        from . import (blender, gui, async_loop, settings_sync, blendfile, home_project,
+        from . import (blender, texture_browser, async_loop, settings_sync, blendfile, home_project,
                        image_sharing)
 
     async_loop.setup_asyncio_executor()
     async_loop.register()
 
-    gui.register()
+    texture_browser.register()
     blender.register()
     settings_sync.register()
     image_sharing.register()
@@ -109,10 +109,10 @@ def _monkey_patch_requests():
 
 
 def unregister():
-    from . import blender, gui, async_loop, settings_sync, image_sharing
+    from . import blender, texture_browser, async_loop, settings_sync, image_sharing
 
     image_sharing.unregister()
     settings_sync.unregister()
     blender.unregister()
-    gui.unregister()
+    texture_browser.unregister()
     async_loop.unregister()
