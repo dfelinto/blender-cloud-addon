@@ -41,7 +41,7 @@ class SyncStatusProperties(PropertyGroup):
             ('SYNCING', 'SYNCING', 'Synchronising with Blender Cloud.'),
         ],
         name='status',
-        description='Current status of Blender Sync.',
+        description='Current status of Blender Sync',
         update=redraw)
 
     version = EnumProperty(
