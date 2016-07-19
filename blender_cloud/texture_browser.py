@@ -310,6 +310,10 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             elif event.type == 'WHEELDOWNMOUSE':
                 self._scroll_by(-MOUSE_SCROLL_PIXELS_PER_TICK)
                 context.area.tag_redraw()
+            elif event.type == 'TRACKPADPAN':
+                self._scroll_by(event.mouse_prev_y - event.mouse_y,
+                                smooth=False)
+                context.area.tag_redraw()
 
             if left_mouse_release:
                 if selected is None:
