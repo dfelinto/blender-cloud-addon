@@ -233,6 +233,8 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
     mouse_y = 0
     scroll_offset = 0
     scroll_offset_target = 0
+    scroll_offset_max = 0
+    scroll_offset_space_left = 0
 
     def invoke(self, context, event):
         # Refuse to start if the file hasn't been saved.
@@ -575,6 +577,8 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         bgl.glRectf(0, 0, window_region.width, window_region.height)
 
         if self.current_display_content:
+            bottom_y = float('inf')
+
             # The -1 / +2 are for extra rows that are drawn only half at the top/bottom.
             first_item_idx = max(0, int(-self.scroll_offset // block_height - 1) * col_count)
             items_per_page = int(content_height // item_height + 2) * col_count
@@ -589,6 +593,18 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
                 if first_item_idx <= item_idx < last_item_idx:
                     # Only draw if the item is actually on screen.
                     item.draw(highlighted=item.hits(self.mouse_x, self.mouse_y))
+
+                bottom_y = min(y, bottom_y)
+            bgl.glColor4f(0.24, 0.68, 0.91, 1)
+            bgl.glRectf(0,
+                        bottom_y - ITEM_MARGIN_Y,
+                        window_region.width,
+                        bottom_y+1 - ITEM_MARGIN_Y)
+            self.scroll_offset_space_left = window_region.height - bottom_y
+            self.scroll_offset_max = (self.scroll_offset -
+                                      self.scroll_offset_space_left +
+                                      0.25 * block_height)
+
         else:
             font_id = 0
             text = "Communicating with Blender Cloud"
@@ -750,8 +766,17 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
 
         self.scroll_offset += diff * 0.5
 
-    def _scroll_by(self, amount):
-        self.scroll_offset_target = min(0, self.scroll_offset_target + amount)
+    def _scroll_by(self, amount, *, smooth=True):
+        # Slow down scrolling up
+        if smooth and amount < 0 and -amount > self.scroll_offset_space_left / 4:
+            amount = -self.scroll_offset_space_left / 4
+
+        self.scroll_offset_target = min(0,
+                                        max(self.scroll_offset_max,
+                                            self.scroll_offset_target + amount))
+
+        if not smooth:
+            self._scroll_offset = self.scroll_offset_target
 
     def _scroll_reset(self):
         self.scroll_offset_target = self.scroll_offset = 0
