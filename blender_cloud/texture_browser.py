@@ -28,7 +28,7 @@ import bgl
 import blf
 
 import pillarsdk
-from . import async_loop, pillar, cache
+from . import async_loop, pillar, cache, blender
 
 REQUIRED_ROLES_FOR_TEXTURE_BROWSER = {'subscriber', 'demo'}
 MOUSE_SCROLL_PIXELS_PER_TICK = 50
@@ -789,15 +789,15 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
 addon_keymaps = []
 
 
-def menu_draw(self, context):
-    layout = self.layout
-    layout.separator()
-    layout.operator(BlenderCloudBrowser.bl_idname, icon='MOD_SCREW')
+def image_editor_menu(self, context):
+    self.layout.operator(BlenderCloudBrowser.bl_idname,
+                         text='Get image from Blender Cloud',
+                         icon_value=blender.icon('CLOUD'))
 
 
 def register():
     bpy.utils.register_class(BlenderCloudBrowser)
-    # bpy.types.INFO_MT_mesh_add.append(menu_draw)
+    bpy.types.IMAGE_MT_image.prepend(image_editor_menu)
 
     # handle the keymap
     wm = bpy.context.window_manager
@@ -817,4 +817,5 @@ def unregister():
         km.keymap_items.remove(kmi)
     addon_keymaps.clear()
 
+    bpy.types.IMAGE_MT_image.remove(image_editor_menu)
     bpy.utils.unregister_class(BlenderCloudBrowser)
