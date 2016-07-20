@@ -27,6 +27,7 @@ import os.path
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene, PropertyGroup
 from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty
+import rna_prop_ui
 
 from . import pillar
 
@@ -303,6 +304,17 @@ class PILLAR_OT_subscribe(Operator):
         return {'FINISHED'}
 
 
+class PILLAR_PT_image_custom_properties(rna_prop_ui.PropertyPanel, bpy.types.Panel):
+    """Shows custom properties in the image editor."""
+
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'UI'
+    bl_label = 'Custom Properties'
+
+    _context_path = 'edit_image'
+    _property_type = bpy.types.Image
+
+
 def preferences() -> BlenderCloudPreferences:
     return bpy.context.user_preferences.addons[ADDON_NAME].preferences
 
@@ -345,6 +357,7 @@ def register():
     bpy.utils.register_class(PillarCredentialsUpdate)
     bpy.utils.register_class(SyncStatusProperties)
     bpy.utils.register_class(PILLAR_OT_subscribe)
+    bpy.utils.register_class(PILLAR_PT_image_custom_properties)
 
     addon_prefs = preferences()
 
@@ -376,6 +389,7 @@ def unregister():
     bpy.utils.unregister_class(BlenderCloudPreferences)
     bpy.utils.unregister_class(SyncStatusProperties)
     bpy.utils.unregister_class(PILLAR_OT_subscribe)
+    bpy.utils.unregister_class(PILLAR_PT_image_custom_properties)
 
     del WindowManager.last_blender_cloud_location
     del WindowManager.blender_sync_status
