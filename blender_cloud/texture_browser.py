@@ -135,7 +135,7 @@ class MenuItem:
     def node_uuid(self) -> str:
         return self.node['_id']
 
-    def update(self, node, file_desc, thumb_path: str, label_text):
+    def update(self, node, file_desc, thumb_path: str, label_text=None):
         # We can get updated information about our Node, but a MenuItem should
         # always represent one node, and it shouldn't be shared between nodes.
         if self.node_uuid != node['_id']:
@@ -144,7 +144,9 @@ class MenuItem:
         self.node = node
         self.file_desc = file_desc  # pillarsdk.File object, or None if a 'folder' node.
         self.thumb_path = thumb_path
-        self.label_text = label_text
+
+        if label_text is not None:
+            self.label_text = label_text
 
     @property
     def is_folder(self) -> bool:
@@ -471,7 +473,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             self.add_menu_item(node, None, 'SPINNER', texture_node['name'])
 
         def thumbnail_loaded(node, file_desc, thumb_path):
-            self.update_menu_item(node, file_desc, thumb_path, file_desc['filename'])
+            self.update_menu_item(node, file_desc, thumb_path)
 
         project_uuid = self.current_path.project_uuid
         node_uuid = self.current_path.node_uuid
