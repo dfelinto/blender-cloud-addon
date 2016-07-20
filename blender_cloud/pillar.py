@@ -17,6 +17,7 @@ from pillarsdk.utils import sanitize_filename
 from . import cache
 
 SUBCLIENT_ID = 'PILLAR'
+TEXTURE_NODE_TYPES = {'texture', 'hdri'}
 
 _pillar_api = {}  # will become a mapping from bool (cached/non-cached) to pillarsdk.Api objects.
 log = logging.getLogger(__name__)
@@ -294,7 +295,8 @@ async def get_nodes(project_uuid: str = None, parent_node_uuid: str = None,
         if isinstance(node_type, str):
             where['node_type'] = node_type
         else:
-            where['node_type'] = {'$in': node_type}
+            # Convert set & tuple to list
+            where['node_type'] = {'$in': list(node_type)}
 
     params = {'projection': {'name': 1, 'parent': 1, 'node_type': 1, 'properties.order': 1,
                              'properties.status': 1, 'properties.files': 1,
@@ -478,7 +480,7 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
     # Download all texture nodes in parallel.
     log.debug('Getting child nodes of node %r', parent_node_uuid)
     texture_nodes = await get_nodes(parent_node_uuid=parent_node_uuid,
-                                    node_type='texture')
+                                    node_type=TEXTURE_NODE_TYPES)
 
     if is_cancelled(future):
         log.warning('fetch_texture_thumbs: Texture downloading cancelled')
@@ -504,7 +506,7 @@ async def download_texture_thumbnail(texture_node, desired_size: str,
                                      thumbnail_loaded: callable,
                                      future: asyncio.Future = None):
     # Skip non-texture nodes, as we can't thumbnail them anyway.
-    if texture_node['node_type'] != 'texture':
+    if texture_node['node_type'] not in TEXTURE_NODE_TYPES:
         return
 
     if is_cancelled(future):
@@ -616,8 +618,9 @@ async def download_texture(texture_node,
                            texture_loading: callable,
                            texture_loaded: callable,
                            future: asyncio.Future):
-    if texture_node['node_type'] != 'texture':
-        raise TypeError("Node type should be 'texture', not %r" % texture_node['node_type'])
+    if texture_node['node_type'] not in TEXTURE_NODE_TYPES:
+        raise TypeError("Node type should be in %r, not %r" %
+                        (TEXTURE_NODE_TYPES, texture_node['node_type']))
 
     # Download every file. Eve doesn't support embedding from a list-of-dicts.
     downloaders = (download_file_by_uuid(file_info['file'],

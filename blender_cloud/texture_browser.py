@@ -81,7 +81,8 @@ class MenuItem:
         'SPINNER': os.path.join(library_icons_path, 'spinner.png'),
     }
 
-    SUPPORTED_NODE_TYPES = {'UP', 'PROJECT', 'group_texture', 'texture'}
+    FOLDER_NODE_TYPES = {'group_texture', 'group_hdri'}
+    SUPPORTED_NODE_TYPES = {'UP', 'PROJECT', 'texture', 'hdri'}.union(FOLDER_NODE_TYPES)
 
     def __init__(self, node, file_desc, thumb_path: str, label_text):
         self.log = logging.getLogger('%s.MenuItem' % __name__)
@@ -97,7 +98,7 @@ class MenuItem:
         self.label_text = label_text
         self._thumb_path = ''
         self.icon = None
-        self._is_folder = (node['node_type'] == 'group_texture' or
+        self._is_folder = (node['node_type'] in self.FOLDER_NODE_TYPES or
                            isinstance(node, SpecialFolderNode))
 
         # Determine sorting order.
@@ -479,13 +480,13 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             # Query for sub-nodes of this node.
             self.log.debug('Getting subnodes for parent node %r', node_uuid)
             children = await pillar.get_nodes(parent_node_uuid=node_uuid,
-                                              node_type='group_texture')
+                                              node_type={'group_texture', 'group_hdri'})
         elif project_uuid:
             # Query for top-level nodes.
             self.log.debug('Getting subnodes for project node %r', project_uuid)
             children = await pillar.get_nodes(project_uuid=project_uuid,
                                               parent_node_uuid='',
-                                              node_type='group_texture')
+                                              node_type={'group_texture', 'group_hdri'})
         else:
             # Query for projects
             self.log.debug('No node UUID and no project UUID, listing available projects')
