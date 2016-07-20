@@ -588,7 +588,7 @@ async def download_file_by_uuid(file_uuid,
     save_as_json(file_desc, metadata_file)
 
     root, ext = os.path.splitext(file_desc['filename'])
-    if map_type is None or root.endswith(map_type):
+    if not map_type or root.endswith(map_type):
         target_filename = '%s%s' % (root, ext)
     else:
         target_filename = '%s-%s%s' % (root, map_type, ext)
@@ -618,19 +618,22 @@ async def download_texture(texture_node,
                            texture_loading: callable,
                            texture_loaded: callable,
                            future: asyncio.Future):
-    if texture_node['node_type'] not in TEXTURE_NODE_TYPES:
+    node_type_name = texture_node['node_type']
+    if node_type_name not in TEXTURE_NODE_TYPES:
         raise TypeError("Node type should be in %r, not %r" %
-                        (TEXTURE_NODE_TYPES, texture_node['node_type']))
+                        (TEXTURE_NODE_TYPES, node_type_name))
 
     # Download every file. Eve doesn't support embedding from a list-of-dicts.
-    downloaders = (download_file_by_uuid(file_info['file'],
-                                         target_directory,
-                                         metadata_directory,
-                                         map_type=file_info['map_type'],
-                                         file_loading=texture_loading,
-                                         file_loaded=texture_loaded,
-                                         future=future)
-                   for file_info in texture_node['properties']['files'])
+    downloaders = []
+    for file_info in texture_node['properties']['files']:
+        dlr = download_file_by_uuid(file_info['file'],
+                                    target_directory,
+                                    metadata_directory,
+                                    map_type=file_info.map_type,
+                                    file_loading=texture_loading,
+                                    file_loaded=texture_loaded,
+                                    future=future)
+        downloaders.append(dlr)
 
     return await asyncio.gather(*downloaders, return_exceptions=True)
 
