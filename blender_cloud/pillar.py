@@ -157,6 +157,12 @@ def pillar_api(pillar_endpoint: str = None, caching=True) -> pillarsdk.Api:
                                         token=subclient['token'])
         _noncaching_api.requests_session = uncached_session
 
+        # Send the addon version as HTTP header.
+        from blender_cloud import bl_info
+        addon_version = '.'.join(str(v) for v in bl_info['version'])
+        _caching_api.global_headers['Blender-Cloud-Addon'] = addon_version
+        _noncaching_api.global_headers['Blender-Cloud-Addon'] = addon_version
+
         _pillar_api = {
             True: _caching_api,
             False: _noncaching_api,
