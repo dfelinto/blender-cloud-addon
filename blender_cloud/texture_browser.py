@@ -726,15 +726,26 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         self.log.debug('Metadata will be stored at %s', meta_path)
 
         file_paths = []
+        select_dblock = None
 
         def texture_downloading(file_path, file_desc, *args):
             self.log.info('Texture downloading to %s', file_path)
 
         def texture_downloaded(file_path, file_desc, *args):
+            nonlocal select_dblock
+
             self.log.info('Texture downloaded to %r.', file_path)
             image_dblock = bpy.data.images.load(filepath=file_path)
             image_dblock['bcloud_file_uuid'] = file_desc['_id']
             image_dblock['bcloud_texture_node_uuid'] = item.node_uuid
+
+            # Select the image in the image editor (if the context is right).
+            # Just set the first image we download,
+            if context.area.type == 'IMAGE_EDITOR':
+                if select_dblock is None or file_desc.map_type == 'color':
+                    select_dblock = image_dblock
+                    context.space_data.image = select_dblock
+
             file_paths.append(file_path)
 
         def texture_download_completed(_):
