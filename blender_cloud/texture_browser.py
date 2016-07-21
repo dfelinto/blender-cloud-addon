@@ -26,7 +26,7 @@ import bgl
 import blf
 
 import pillarsdk
-from . import async_loop, pillar, cache, blender
+from . import async_loop, pillar, cache, blender, utils
 
 REQUIRED_ROLES_FOR_TEXTURE_BROWSER = {'subscriber', 'demo'}
 MOUSE_SCROLL_PIXELS_PER_TICK = 50
@@ -511,10 +511,14 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             self.update_menu_item(node, file_desc, thumb_path)
 
         def hdri_thumbnail_loading(node, texture_node):
-            self.add_menu_item(node, None, 'SPINNER', node.resolution)
+            self.add_menu_item(node, None, 'SPINNER',
+                               'Resolution: %s' % node.resolution)
 
         def hdri_thumbnail_loaded(node, file_desc, thumb_path):
-            self.update_menu_item(node, file_desc, thumb_path)
+            filesize = utils.sizeof_fmt(file_desc.length)
+
+            self.update_menu_item(node, file_desc, thumb_path,
+                                  'Resolution: %s (%s)' % (node.resolution, filesize))
 
         project_uuid = self.current_path.project_uuid
         node_uuid = self.current_path.node_uuid

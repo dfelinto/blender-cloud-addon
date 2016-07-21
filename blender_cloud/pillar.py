@@ -592,7 +592,8 @@ async def download_texture_thumbnail(texture_node, desired_size: str,
     # Load the File that belongs to this texture node's picture.
     loop.call_soon_threadsafe(thumbnail_loading, texture_node, texture_node)
     file_desc = await pillar_call(pillarsdk.File.find, pic_uuid, params={
-        'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1},
+        'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1,
+                       'length': 1},
     })
 
     if file_desc is None:

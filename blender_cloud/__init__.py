@@ -72,6 +72,7 @@ def register():
 
         reload_mod('blendfile')
         reload_mod('home_project')
+        reload_mod('utils')
 
         blender = reload_mod('blender')
         async_loop = reload_mod('async_loop')
