@@ -816,10 +816,17 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         def texture_downloaded(file_path, file_desc, *args):
             nonlocal select_dblock
 
+            node = item.node
+            if isinstance(node, HdriFileNode):
+                # We want to obtain the real node, not the fake one.
+                node = self.menu_item_stack[-1].node
+
             self.log.info('Texture downloaded to %r.', file_path)
             image_dblock = bpy.data.images.load(filepath=file_path)
             image_dblock['bcloud_file_uuid'] = file_desc['_id']
-            image_dblock['bcloud_texture_node_uuid'] = item.node_uuid
+            image_dblock['bcloud_node_uuid'] = node['_id']
+            image_dblock['bcloud_node_type'] = node.node_type
+            image_dblock['bcloud_node'] = pillar.node_to_id(node)
 
             # Select the image in the image editor (if the context is right).
             # Just set the first image we download,

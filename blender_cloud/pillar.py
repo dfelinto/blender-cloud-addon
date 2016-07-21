@@ -17,6 +17,7 @@
 # ##### END GPL LICENSE BLOCK #####
 
 import asyncio
+import datetime
 import json
 import os
 import functools
@@ -36,6 +37,8 @@ from . import cache
 
 SUBCLIENT_ID = 'PILLAR'
 TEXTURE_NODE_TYPES = {'texture', 'hdri', 'HDRI_FILE'}
+
+RFC1123_DATE_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'
 
 _pillar_api = {}  # will become a mapping from bool (cached/non-cached) to pillarsdk.Api objects.
 log = logging.getLogger(__name__)
@@ -856,3 +859,21 @@ async def attach_file_to_group(file_path: pathlib.Path,
                              extra_where=user_id and {'user': user_id})
 
     return node
+
+
+def node_to_id(node: pillarsdk.Node) -> dict:
+    """Converts a Node to a dict we can store in an ID property.
+
+    ID properties only support a handful of Python classes, so we have
+    to convert datetime.datetime to a string and remove None values.
+    """
+
+    def to_rna(value):
+        if isinstance(value, dict):
+            return {k: to_rna(v) for k, v in value.items()}
+        if isinstance(value, datetime.datetime):
+            return value.strftime(RFC1123_DATE_FORMAT)
+        return value
+
+    as_dict = to_rna(node.to_dict())
+    return pillarsdk.utils.remove_none_attributes(as_dict)
