@@ -517,46 +517,6 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
     log.info('fetch_texture_thumbs: Done downloading texture thumbnails')
 
 
-async def fetch_node_thumbs(nodes: list, desired_size: str,
-                            thumbnail_directory: str,
-                            *,
-                            thumbnail_loading: callable,
-                            thumbnail_loaded: callable,
-                            future: asyncio.Future = None):
-    """Fetches all thumbnails of a list of texture/hdri nodes.
-
-    Uses the picture of the node, falling back to properties.files[0].file.
-
-    @param nodes: List of node documents.
-    @param desired_size: size indicator, from 'sbtmlh'.
-    @param thumbnail_directory: directory in which to store the downloaded thumbnails.
-    @param thumbnail_loading: callback function that takes (pillarsdk.Node, pillarsdk.File)
-        parameters, which is called before a thumbnail will be downloaded. This allows you to
-        show a "downloading" indicator.
-    @param thumbnail_loaded: callback function that takes (pillarsdk.Node, pillarsdk.File object,
-        thumbnail path) parameters, which is called for every thumbnail after it's been downloaded.
-    @param future: Future that's inspected; if it is not None and cancelled, texture downloading
-        is aborted.
-    """
-
-    # Download all thumbnails in parallel.
-    if is_cancelled(future):
-        log.warning('fetch_texture_thumbs: Texture downloading cancelled')
-        return
-
-    coros = (download_texture_thumbnail(node, desired_size,
-                                        thumbnail_directory,
-                                        thumbnail_loading=thumbnail_loading,
-                                        thumbnail_loaded=thumbnail_loaded,
-                                        future=future)
-             for node in nodes)
-
-    # raises any exception from failed handle_texture_node() calls.
-    await asyncio.gather(*coros)
-
-    log.info('fetch_node_thumbs: Done downloading %i thumbnails', len(nodes))
-
-
 async def download_texture_thumbnail(texture_node, desired_size: str,
                                      thumbnail_directory: str,
                                      *,
@@ -620,6 +580,65 @@ async def download_texture_thumbnail(texture_node, desired_size: str,
         await download_to_file(thumb_url, thumb_path, header_store=header_store, future=future)
 
     loop.call_soon_threadsafe(thumbnail_loaded, texture_node, file_desc, thumb_path)
+
+
+async def fetch_node_files(node: pillarsdk.Node,
+                           *,
+                           file_doc_loading: callable,
+                           file_doc_loaded: callable,
+                           future: asyncio.Future = None):
+    """Fetches all files of a texture/hdri node.
+
+    @param node: Node document to fetch all file docs for.
+    @param file_doc_loading: callback function that takes (file_id, ) parameters,
+        which is called before a file document will be downloaded. This allows you to
+        show a "downloading" indicator.
+    @param file_doc_loaded: callback function that takes (file_id, pillarsdk.File object)
+        parameters, which is called for every thumbnail after it's been downloaded.
+    @param future: Future that's inspected; if it is not None and cancelled, texture downloading
+        is aborted.
+    """
+
+    # Download all thumbnails in parallel.
+    if is_cancelled(future):
+        log.warning('fetch_texture_thumbs: Texture downloading cancelled')
+        return
+
+    coros = (download_file_doc(file_ref.file,
+                               file_doc_loading=file_doc_loading,
+                               file_doc_loaded=file_doc_loaded,
+                               future=future)
+             for file_ref in node.properties.files)
+
+    # raises any exception from failed handle_texture_node() calls.
+    await asyncio.gather(*coros)
+
+    log.info('fetch_node_files: Done downloading %i files', len(node.properties.files))
+
+
+async def download_file_doc(file_id,
+                            *,
+                            file_doc_loading: callable,
+                            file_doc_loaded: callable,
+                            future: asyncio.Future = None):
+
+    if is_cancelled(future):
+        log.debug('fetch_texture_thumbs cancelled before finding File for file_id %s', file_id)
+        return
+
+    loop = asyncio.get_event_loop()
+
+    # Load the File that belongs to this texture node's picture.
+    loop.call_soon_threadsafe(file_doc_loading, file_id)
+    file_desc = await pillar_call(pillarsdk.File.find, file_id, params={
+        'projection': {'filename': 1, 'variations': 1, 'width': 1, 'height': 1,
+                       'length': 1},
+    })
+
+    if file_desc is None:
+        log.warning('Unable to find File for file_id %s', file_id)
+
+    loop.call_soon_threadsafe(file_doc_loaded, file_id, file_desc)
 
 
 async def download_file_by_uuid(file_uuid,
