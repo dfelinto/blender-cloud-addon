@@ -666,7 +666,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             bgl.glRectf(0,
                         bottom_y - ITEM_MARGIN_Y,
                         window_region.width,
-                        bottom_y+1 - ITEM_MARGIN_Y)
+                        bottom_y + 1 - ITEM_MARGIN_Y)
             self.scroll_offset_space_left = window_region.height - bottom_y
             self.scroll_offset_max = (self.scroll_offset -
                                       self.scroll_offset_space_left +
