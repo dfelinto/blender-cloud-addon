@@ -35,7 +35,7 @@ from pillarsdk.utils import sanitize_filename
 from . import cache
 
 SUBCLIENT_ID = 'PILLAR'
-TEXTURE_NODE_TYPES = {'texture', 'hdri'}
+TEXTURE_NODE_TYPES = {'texture', 'hdri', 'HDRI_FILE'}
 
 _pillar_api = {}  # will become a mapping from bool (cached/non-cached) to pillarsdk.Api objects.
 log = logging.getLogger(__name__)
@@ -515,6 +515,46 @@ async def fetch_texture_thumbs(parent_node_uuid: str, desired_size: str,
     await asyncio.gather(*coros)
 
     log.info('fetch_texture_thumbs: Done downloading texture thumbnails')
+
+
+async def fetch_node_thumbs(nodes: list, desired_size: str,
+                            thumbnail_directory: str,
+                            *,
+                            thumbnail_loading: callable,
+                            thumbnail_loaded: callable,
+                            future: asyncio.Future = None):
+    """Fetches all thumbnails of a list of texture/hdri nodes.
+
+    Uses the picture of the node, falling back to properties.files[0].file.
+
+    @param nodes: List of node documents.
+    @param desired_size: size indicator, from 'sbtmlh'.
+    @param thumbnail_directory: directory in which to store the downloaded thumbnails.
+    @param thumbnail_loading: callback function that takes (pillarsdk.Node, pillarsdk.File)
+        parameters, which is called before a thumbnail will be downloaded. This allows you to
+        show a "downloading" indicator.
+    @param thumbnail_loaded: callback function that takes (pillarsdk.Node, pillarsdk.File object,
+        thumbnail path) parameters, which is called for every thumbnail after it's been downloaded.
+    @param future: Future that's inspected; if it is not None and cancelled, texture downloading
+        is aborted.
+    """
+
+    # Download all thumbnails in parallel.
+    if is_cancelled(future):
+        log.warning('fetch_texture_thumbs: Texture downloading cancelled')
+        return
+
+    coros = (download_texture_thumbnail(node, desired_size,
+                                        thumbnail_directory,
+                                        thumbnail_loading=thumbnail_loading,
+                                        thumbnail_loaded=thumbnail_loaded,
+                                        future=future)
+             for node in nodes)
+
+    # raises any exception from failed handle_texture_node() calls.
+    await asyncio.gather(*coros)
+
+    log.info('fetch_node_thumbs: Done downloading %i thumbnails', len(nodes))
 
 
 async def download_texture_thumbnail(texture_node, desired_size: str,

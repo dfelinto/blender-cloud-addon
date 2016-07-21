@@ -44,24 +44,47 @@ library_icons_path = os.path.join(os.path.dirname(__file__), "icons")
 
 
 class SpecialFolderNode(pillarsdk.Node):
-    pass
+    NODE_TYPE = 'SPECIAL'
 
 
 class UpNode(SpecialFolderNode):
+    NODE_TYPE = 'UP'
+
     def __init__(self):
         super().__init__()
         self['_id'] = 'UP'
-        self['node_type'] = 'UP'
+        self['node_type'] = self.NODE_TYPE
 
 
 class ProjectNode(SpecialFolderNode):
+    NODE_TYPE = 'PROJECT'
+
     def __init__(self, project):
         super().__init__()
 
         assert isinstance(project, pillarsdk.Project), 'wrong type for project: %r' % type(project)
 
         self.merge(project.to_dict())
-        self['node_type'] = 'PROJECT'
+        self['node_type'] = self.NODE_TYPE
+
+
+class HdriFileNode(SpecialFolderNode):
+    NODE_TYPE = 'HDRI_FILE'
+
+    def __init__(self, hdri_node, file_idx):
+        super().__init__()
+
+        assert isinstance(hdri_node, pillarsdk.Node), \
+            'wrong type for hdri_node: %r' % type(hdri_node)
+
+        self.merge(hdri_node.to_dict())
+        self['node_type'] = self.NODE_TYPE
+        self['picture'] = None  # force the download to use the files.
+
+        # Just represent that one file.
+        my_file = self['properties']['files'][file_idx]
+        self['properties']['files'] = [my_file]
+        self['resolution'] = my_file['resolution']
 
 
 class MenuItem:
@@ -79,8 +102,9 @@ class MenuItem:
         'SPINNER': os.path.join(library_icons_path, 'spinner.png'),
     }
 
-    FOLDER_NODE_TYPES = {'group_texture', 'group_hdri'}
-    SUPPORTED_NODE_TYPES = {'UP', 'PROJECT', 'texture', 'hdri'}.union(FOLDER_NODE_TYPES)
+    FOLDER_NODE_TYPES = {'group_texture', 'group_hdri', 'hdri',
+                         UpNode.NODE_TYPE, ProjectNode.NODE_TYPE}
+    SUPPORTED_NODE_TYPES = {HdriFileNode.NODE_TYPE, 'texture'}.union(FOLDER_NODE_TYPES)
 
     def __init__(self, node, file_desc, thumb_path: str, label_text):
         self.log = logging.getLogger('%s.MenuItem' % __name__)
@@ -96,8 +120,7 @@ class MenuItem:
         self.label_text = label_text
         self._thumb_path = ''
         self.icon = None
-        self._is_folder = (node['node_type'] in self.FOLDER_NODE_TYPES or
-                           isinstance(node, SpecialFolderNode))
+        self._is_folder = node['node_type'] in self.FOLDER_NODE_TYPES
 
         # Determine sorting order.
         # by default, sort all the way at the end and folders first.
@@ -132,6 +155,20 @@ class MenuItem:
     @property
     def node_uuid(self) -> str:
         return self.node['_id']
+
+    def represents(self, node) -> bool:
+        """Returns True iff this MenuItem represents the given node."""
+
+        node_uuid = node['_id']
+        if self.node_uuid != node_uuid:
+            return False
+
+        # HDRi nodes can be represented using multiple MenuItems, one
+        # for each available resolution. We need to match on that too.
+        if self.node.node_type == HdriFileNode.NODE_TYPE:
+            return self.node.resolution == node.resolution
+
+        return True
 
     def update(self, node, file_desc, thumb_path: str, label_text=None):
         # We can get updated information about our Node, but a MenuItem should
@@ -440,7 +477,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         # Just make this thread-safe to be on the safe side.
         with self._menu_item_lock:
             for menu_item in self.current_display_content:
-                if menu_item.node_uuid == node_uuid:
+                if menu_item.represents(node):
                     menu_item.update(node, *args)
                     self.loaded_images.add(menu_item.icon.filepath_raw)
                     break
@@ -473,14 +510,28 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         def thumbnail_loaded(node, file_desc, thumb_path):
             self.update_menu_item(node, file_desc, thumb_path)
 
+        def hdri_thumbnail_loading(node, texture_node):
+            self.add_menu_item(node, None, 'SPINNER', node.resolution)
+
+        def hdri_thumbnail_loaded(node, file_desc, thumb_path):
+            self.update_menu_item(node, file_desc, thumb_path)
+
         project_uuid = self.current_path.project_uuid
         node_uuid = self.current_path.node_uuid
+        is_hdri_node = False
+        current_node = None
 
         if node_uuid:
-            # Query for sub-nodes of this node.
-            self.log.debug('Getting subnodes for parent node %r', node_uuid)
-            children = await pillar.get_nodes(parent_node_uuid=node_uuid,
-                                              node_type={'group_texture', 'group_hdri'})
+            current_node = self.path_stack[-1]
+            is_hdri_node = current_node.node_type == 'hdri'
+            if is_hdri_node:
+                # No child folders
+                children = []
+            else:
+                # Query for sub-nodes of this node.
+                self.log.debug('Getting subnodes for parent node %r', node_uuid)
+                children = await pillar.get_nodes(parent_node_uuid=node_uuid,
+                                                  node_type={'group_texture', 'group_hdri'})
         elif project_uuid:
             # Query for top-level nodes.
             self.log.debug('Getting subnodes for project node %r', project_uuid)
@@ -515,11 +566,26 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         directory = os.path.join(thumbnails_directory, project_uuid, node_uuid)
         os.makedirs(directory, exist_ok=True)
 
-        self.log.debug('Fetching texture thumbnails for node %r', node_uuid)
-        await pillar.fetch_texture_thumbs(node_uuid, 's', directory,
-                                          thumbnail_loading=thumbnail_loading,
-                                          thumbnail_loaded=thumbnail_loaded,
-                                          future=self.signalling_future)
+        if is_hdri_node:
+            self.log.debug('This is a HDRi node')
+            # Construct a fake node for every file in the HDRi.
+            nodes = []
+            for file_idx, file_ref in enumerate(current_node.properties.files):
+                node = HdriFileNode(current_node, file_idx)
+                nodes.append(node)
+
+            await pillar.fetch_node_thumbs(nodes, 's', directory,
+                                           thumbnail_loading=hdri_thumbnail_loading,
+                                           thumbnail_loaded=hdri_thumbnail_loaded,
+                                           future=self.signalling_future)
+            self.log.debug('Constructed %i HDRi children', len(current_node.properties.files))
+
+        else:
+            self.log.debug('Fetching texture thumbnails for node %r', node_uuid)
+            await pillar.fetch_texture_thumbs(node_uuid, 's', directory,
+                                              thumbnail_loading=thumbnail_loading,
+                                              thumbnail_loaded=thumbnail_loaded,
+                                              future=self.signalling_future)
 
     def browse_assets(self):
         self.log.debug('Browsing assets at %r', self.current_path)
