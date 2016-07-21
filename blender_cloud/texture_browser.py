@@ -574,7 +574,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
                 # Construct a fake node for every file in the HDRi
                 node = HdriFileNode(current_node, file_id)
                 nodes_for_file_ids[file_id] = node
-                self.add_menu_item(node, None, 'SPINNER',
+                self.add_menu_item(node, None, thumb_path,
                                    'Resolution: %s' % node.resolution)
 
             def file_doc_loaded(file_id, file_desc):
