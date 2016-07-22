@@ -625,11 +625,6 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
                     item.draw(highlighted=item.hits(self.mouse_x, self.mouse_y))
 
                 bottom_y = min(y, bottom_y)
-            bgl.glColor4f(0.24, 0.68, 0.91, 1)
-            bgl.glRectf(0,
-                        bottom_y - ITEM_MARGIN_Y,
-                        window_region.width,
-                        bottom_y + 1 - ITEM_MARGIN_Y)
             self.scroll_offset_space_left = window_region.height - bottom_y
             self.scroll_offset_max = (self.scroll_offset -
                                       self.scroll_offset_space_left +
