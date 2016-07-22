@@ -960,40 +960,48 @@ def image_editor_menu(self, context):
                          icon_value=blender.icon('CLOUD'))
 
 
-def hdri_download_panel(self, context):
-    # Only show for HDRi images.
-    if 'bcloud_node_type' not in context.edit_image:
-        return
-    if context.edit_image['bcloud_node_type'] != 'hdri':
+def hdri_download_panel__image_editor(self, context):
+    _hdri_download_panel(self, context.edit_image)
+
+
+def hdri_download_panel__node_editor(self, context):
+    if context.active_node.type not in {'TEX_ENVIRONMENT', 'TEX_IMAGE'}:
         return
 
-    row = self.layout.row()
-    row.prop(context.window_manager, 'hdri_variation',
-             text='HDRi')
+    _hdri_download_panel(self, context.active_node.image)
+
+
+def _hdri_download_panel(self, current_image):
+    if not current_image:
+        return
+    if 'bcloud_node_type' not in current_image:
+        return
+    if current_image['bcloud_node_type'] != 'hdri':
+        return
+
+    row = self.layout.row(align=True)
+    row.label('HDRi', icon_value=blender.icon('CLOUD'))
+    row.prop(current_image, 'hdri_variation', text='')
     props = row.operator(PILLAR_OT_switch_hdri.bl_idname,
                          text='Replace',
-                         icon_value=blender.icon('CLOUD'))
-    props.image_name = context.edit_image.name
-    props.file_uuid = context.window_manager.hdri_variation
+                         icon='FILE_REFRESH')
+    props.image_name = current_image.name
+    props.file_uuid = current_image.hdri_variation
 
 
 def hdri_variation_choices(self, context):
-    if context.area.type != 'IMAGE_EDITOR':
+    if context.area.type == 'IMAGE_EDITOR':
+        image = context.edit_image
+    elif context.area.type == 'NODE_EDITOR':
+        image = context.active_node.image
+    else:
         return []
 
-    image = context.edit_image
     if 'bcloud_node' not in image:
         return []
 
     choices = [(file_doc['file'], file_doc['resolution'], '')
                for file_doc in image['bcloud_node']['properties']['files']]
-
-    if context.window_manager.hdri_last_seen_image_name != image.name:
-        log.debug('Active image changed %s -> %s',
-                  context.window_manager.hdri_last_seen_image_name,
-                  image.name)
-        context.window_manager.hdri_last_seen_image_name = image.name
-        context.window_manager.hdri_variation = image['bcloud_file_uuid']
 
     return choices
 
@@ -1002,17 +1010,14 @@ def register():
     bpy.utils.register_class(BlenderCloudBrowser)
     bpy.utils.register_class(PILLAR_OT_switch_hdri)
     bpy.types.IMAGE_MT_image.prepend(image_editor_menu)
-    bpy.types.IMAGE_PT_image_properties.append(hdri_download_panel)
+    bpy.types.IMAGE_PT_image_properties.append(hdri_download_panel__image_editor)
+    bpy.types.NODE_PT_active_node_properties.append(hdri_download_panel__node_editor)
 
     # HDRi resolution switcher/chooser.
     # TODO: when an image is selected, switch this property to its current resolution.
-    bpy.types.WindowManager.hdri_variation = bpy.props.EnumProperty(
+    bpy.types.Image.hdri_variation = bpy.props.EnumProperty(
         name='HDRi variations',
         items=hdri_variation_choices
-    )
-
-    bpy.types.WindowManager.hdri_last_seen_image_name = bpy.props.StringProperty(
-        default=''
     )
 
     # handle the keymap
@@ -1033,10 +1038,11 @@ def unregister():
         km.keymap_items.remove(kmi)
     addon_keymaps.clear()
 
-    if hasattr(bpy.types.WindowManager, 'hdri_variation'):
-        del bpy.types.WindowManager.hdri_variation
+    if hasattr(bpy.types.Image, 'hdri_variation'):
+        del bpy.types.Image.hdri_variation
 
     bpy.types.IMAGE_MT_image.remove(image_editor_menu)
-    bpy.types.IMAGE_PT_image_properties.remove(hdri_download_panel)
+    bpy.types.IMAGE_PT_image_properties.remove(hdri_download_panel__image_editor)
+    bpy.types.NODE_PT_active_node_properties.remove(hdri_download_panel__node_editor)
     bpy.utils.unregister_class(BlenderCloudBrowser)
     bpy.utils.unregister_class(PILLAR_OT_switch_hdri)
