@@ -856,7 +856,8 @@ async def attach_file_to_group(file_path: pathlib.Path,
                              group_node_id,
                              'file',
                              str(file_path),
-                             extra_where=user_id and {'user': user_id})
+                             extra_where=user_id and {'user': user_id},
+                             caching=False)
 
     return node
 
