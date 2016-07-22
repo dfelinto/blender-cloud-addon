@@ -847,8 +847,8 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
                             bpy.types.Operator):
     bl_idname = 'pillar.switch_hdri'
     bl_label = 'Switch with another variation'
-    bl_description = 'Downloads another variation of an HDRi, ' \
-                     'and switches the current image with it'
+    bl_description = 'Downloads the selected variation of an HDRi, ' \
+                     'replacing the current image'
 
     log = logging.getLogger('bpy.ops.%s' % bl_idname)
 
@@ -942,18 +942,6 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
 addon_keymaps = []
 
 
-def image_by_file_uuid(file_uuid):
-    """Finds the image datablock by its file UUID.
-
-    Returns None if the image cannot be found.
-    """
-
-    image = next((img for img in bpy.data.images
-                  if img.get('bcloud_file_uuid') == file_uuid),
-                 None)
-    return image
-
-
 def image_editor_menu(self, context):
     self.layout.operator(BlenderCloudBrowser.bl_idname,
                          text='Get image from Blender Cloud',
@@ -978,15 +966,23 @@ def _hdri_download_panel(self, current_image):
         return
     if current_image['bcloud_node_type'] != 'hdri':
         return
+    try:
+        current_variation = current_image['bcloud_file_uuid']
+    except KeyError:
+        log.warning('Image %r has a bcloud_node_type but no bcloud_file_uuid property.',
+                    current_image.name)
+        return
 
-    row = self.layout.row(align=True)
+    row = self.layout.row(align=True).split(0.3)
     row.label('HDRi', icon_value=blender.icon('CLOUD'))
     row.prop(current_image, 'hdri_variation', text='')
-    props = row.operator(PILLAR_OT_switch_hdri.bl_idname,
-                         text='Replace',
-                         icon='FILE_REFRESH')
-    props.image_name = current_image.name
-    props.file_uuid = current_image.hdri_variation
+
+    if current_image.hdri_variation != current_variation:
+        props = row.operator(PILLAR_OT_switch_hdri.bl_idname,
+                             text='Replace',
+                             icon='FILE_REFRESH')
+        props.image_name = current_image.name
+        props.file_uuid = current_image.hdri_variation
 
 
 def hdri_variation_choices(self, context):
@@ -1017,7 +1013,8 @@ def register():
     # TODO: when an image is selected, switch this property to its current resolution.
     bpy.types.Image.hdri_variation = bpy.props.EnumProperty(
         name='HDRi variations',
-        items=hdri_variation_choices
+        items=hdri_variation_choices,
+        description='Select a variation with which to replace this image'
     )
 
     # handle the keymap
