@@ -811,10 +811,10 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         file_paths = []
         select_dblock = None
 
-        def texture_downloading(file_path, file_desc, *args):
+        def texture_downloading(file_path, *_):
             self.log.info('Texture downloading to %s', file_path)
 
-        def texture_downloaded(file_path, file_desc, *args):
+        def texture_downloaded(file_path, file_desc, map_type):
             nonlocal select_dblock
 
             self.log.info('Texture downloaded to %r.', file_path)
@@ -832,6 +832,13 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             image_dblock['bcloud_node_uuid'] = node['_id']
             image_dblock['bcloud_node_type'] = node['node_type']
             image_dblock['bcloud_node'] = pillar.node_to_id(node)
+
+            if node['node_type'] == 'hdri':
+                # All HDRi variations should use the same image datablock, hence once name.
+                image_dblock.name = node['name']
+            else:
+                # All texture variations are loaded at once, and thus need the map type in the name.
+                image_dblock.name = '%s-%s' % (node['name'], map_type)
 
             # Select the image in the image editor (if the context is right).
             # Just set the first image we download,
@@ -941,13 +948,15 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
         self._state = 'QUIT'
 
     async def download_and_replace(self, context):
+        from .pillar import sanitize_filename
+
         self._state = 'DOWNLOADING_TEXTURE'
 
         current_image = bpy.data.images[self.image_name]
+        node = current_image['bcloud_node']
+        filename = '%s.taken_from_file' % sanitize_filename(node['name'])
 
         local_path = os.path.dirname(bpy.path.abspath(current_image.filepath))
-        node = current_image['bcloud_node']
-
         top_texture_directory = bpy.path.abspath(context.scene.local_texture_dir)
         meta_path = os.path.join(top_texture_directory, '.blender_cloud')
 
@@ -958,11 +967,11 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
         self.log.info('Downloading file %r-%s to %s', file_uuid, resolution, local_path)
         self.log.debug('Metadata will be stored at %s', meta_path)
 
-        def file_loading(file_path, file_desc):
+        def file_loading(file_path, file_desc, map_type):
             self.log.info('Texture downloading to %s (%s)',
                           file_path, utils.sizeof_fmt(file_desc['length']))
 
-        async def file_loaded(file_path, file_desc):
+        async def file_loaded(file_path, file_desc, map_type):
             if context.scene.local_texture_dir.startswith('//'):
                 file_path = bpy.path.relpath(file_path)
 
@@ -973,6 +982,7 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
         await pillar.download_file_by_uuid(file_uuid,
                                            local_path,
                                            meta_path,
+                                           filename=filename,
                                            map_type=resolution,
                                            file_loading=file_loading,
                                            file_loaded_sync=file_loaded,

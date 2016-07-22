@@ -648,11 +648,17 @@ async def download_file_by_uuid(file_uuid,
                                 target_directory: str,
                                 metadata_directory: str,
                                 *,
+                                filename: str = None,
                                 map_type: str = None,
                                 file_loading: callable = None,
                                 file_loaded: callable = None,
                                 file_loaded_sync: callable = None,
                                 future: asyncio.Future):
+    """Downloads a file from Pillar by its UUID.
+
+    :param filename: overrules the filename in file_doc['filename'] if given.
+        The extension from file_doc['filename'] is still used, though.
+    """
     if is_cancelled(future):
         log.debug('download_file_by_uuid(%r) cancelled.', file_uuid)
         return
@@ -668,8 +674,10 @@ async def download_file_by_uuid(file_uuid,
     metadata_file = os.path.join(metadata_directory, 'files', '%s.json' % file_uuid)
     save_as_json(file_desc, metadata_file)
 
-    # TODO: base the file name on the node name, not the filename in the file_desc.
+    # Let the caller override the filename root.
     root, ext = os.path.splitext(file_desc['filename'])
+    if filename:
+        root, _ = os.path.splitext(filename)
     if not map_type or root.endswith(map_type):
         target_filename = '%s%s' % (root, ext)
     else:
@@ -679,7 +687,7 @@ async def download_file_by_uuid(file_uuid,
     file_url = file_desc['link']
     # log.debug('Texture %r:\n%s', file_uuid, pprint.pformat(file_desc.to_dict()))
     if file_loading is not None:
-        loop.call_soon_threadsafe(file_loading, file_path, file_desc)
+        loop.call_soon_threadsafe(file_loading, file_path, file_desc, map_type)
 
     # Cached headers are stored in the project space
     header_store = os.path.join(metadata_directory, 'files',
@@ -688,9 +696,9 @@ async def download_file_by_uuid(file_uuid,
     await download_to_file(file_url, file_path, header_store=header_store, future=future)
 
     if file_loaded is not None:
-        loop.call_soon_threadsafe(file_loaded, file_path, file_desc)
+        loop.call_soon_threadsafe(file_loaded, file_path, file_desc, map_type)
     if file_loaded_sync is not None:
-        await file_loaded_sync(file_path, file_desc)
+        await file_loaded_sync(file_path, file_desc, map_type)
 
 
 async def download_texture(texture_node,
@@ -705,13 +713,16 @@ async def download_texture(texture_node,
         raise TypeError("Node type should be in %r, not %r" %
                         (TEXTURE_NODE_TYPES, node_type_name))
 
+    filename = '%s.taken_from_file' % sanitize_filename(texture_node['name'])
+
     # Download every file. Eve doesn't support embedding from a list-of-dicts.
     downloaders = []
     for file_info in texture_node['properties']['files']:
         dlr = download_file_by_uuid(file_info['file'],
                                     target_directory,
                                     metadata_directory,
-                                    map_type=file_info.map_type,
+                                    filename=filename,
+                                    map_type=file_info.map_type or file_info.resolution,
                                     file_loading=texture_loading,
                                     file_loaded=texture_loaded,
                                     future=future)
