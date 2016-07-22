@@ -125,6 +125,7 @@ class MenuItem:
         self._thumb_path = ''
         self.icon = None
         self._is_folder = node['node_type'] in self.FOLDER_NODE_TYPES
+        self._is_spinning = False
 
         # Determine sorting order.
         # by default, sort all the way at the end and folders first.
@@ -150,6 +151,8 @@ class MenuItem:
 
     @thumb_path.setter
     def thumb_path(self, new_thumb_path: str):
+        self._is_spinning = new_thumb_path == 'SPINNER'
+
         self._thumb_path = self.DEFAULT_ICONS.get(new_thumb_path, new_thumb_path)
         if self._thumb_path:
             self.icon = bpy.data.images.load(filepath=self._thumb_path)
@@ -190,6 +193,10 @@ class MenuItem:
     @property
     def is_folder(self) -> bool:
         return self._is_folder
+
+    @property
+    def is_spinning(self) -> bool:
+        return self._is_spinning
 
     def update_placement(self, x, y, width, height):
         """Use OpenGL to draw this one menu item."""
@@ -346,7 +353,10 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
             selected = self.get_clicked()
 
             if selected:
-                context.window.cursor_set('HAND')
+                if selected.is_spinning:
+                    context.window.cursor_set('WAIT')
+                else:
+                    context.window.cursor_set('HAND')
             else:
                 context.window.cursor_set('DEFAULT')
 
@@ -367,15 +377,13 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
                     # No item clicked, ignore it.
                     return {'RUNNING_MODAL'}
 
+                if selected.is_spinning:
+                    # This can happen when the thumbnail information isn't loaded yet.
+                    return {'RUNNING_MODAL'}
+
                 if selected.is_folder:
                     self.descend_node(selected)
                 else:
-                    if selected.file_desc is None:
-                        # This can happen when the thumbnail information isn't loaded yet.
-                        # Just ignore the click for now.
-                        # TODO: think of a way to handle this properly.
-                        self.log.debug('Selected item %r has no file_desc', selected)
-                        return {'RUNNING_MODAL'}
                     self.handle_item_selection(context, selected)
 
         if event.type in {'RIGHTMOUSE', 'ESC'}:
