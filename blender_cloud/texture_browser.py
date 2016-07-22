@@ -816,22 +816,15 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         def texture_downloaded(file_path, file_desc, *args):
             nonlocal select_dblock
 
+            self.log.info('Texture downloaded to %r.', file_path)
+
             node = item.node
             if isinstance(node, HdriFileNode):
                 # We want to obtain the real node, not the fake one.
                 node = self.menu_item_stack[-1].node
+            use_relative_path = context.scene.local_texture_dir.startswith('//')
 
-            if context.scene.local_texture_dir.startswith('//'):
-                # If the local texture dir is blendfile-relative,
-                # so should the image's file path be.
-                file_path = bpy.path.relpath(file_path)
-
-            self.log.info('Texture downloaded to %r.', file_path)
-            image_dblock = bpy.data.images.load(filepath=file_path)
-            image_dblock['bcloud_file_uuid'] = file_desc['_id']
-            image_dblock['bcloud_node_uuid'] = node['_id']
-            image_dblock['bcloud_node_type'] = node.node_type
-            image_dblock['bcloud_node'] = pillar.node_to_id(node)
+            image_dblock = load_image_dblock(file_path, use_relative_path, file_desc['_id'], node)
 
             # Select the image in the image editor (if the context is right).
             # Just set the first image we download,
@@ -888,8 +881,182 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         self.scroll_offset_target = self.scroll_offset = 0
 
 
+class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
+                            async_loop.AsyncModalOperatorMixin,
+                            bpy.types.Operator):
+    bl_idname = 'pillar.switch_hdri'
+    bl_label = 'Switch with another variation'
+    bl_description = 'Downloads another variation of an HDRi, ' \
+                     'and switches the current image with it'
+
+    log = logging.getLogger('bpy.ops.%s' % bl_idname)
+
+    image_name = bpy.props.StringProperty(name='image_name',
+                                          description='Name of the image block to replace')
+
+    file_uuid = bpy.props.StringProperty(name='file_uuid',
+                                         description='File ID to download')
+
+    def invoke(self, context, event):
+        async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
+
+        self.log.info('Starting')
+        self._new_async_task(self.async_execute(context))
+        return {'RUNNING_MODAL'}
+
+    async def async_execute(self, context):
+        """Entry point of the asynchronous operator."""
+
+        self.report({'INFO'}, 'Communicating with Blender Cloud')
+
+        try:
+            try:
+                user_id = await self.check_credentials(context, REQUIRED_ROLES_FOR_TEXTURE_BROWSER)
+            except pillar.NotSubscribedToCloudError:
+                self.log.exception('User not subscribed to cloud.')
+                self.report({'ERROR'}, 'Please subscribe to the Blender Cloud.')
+                self._state = 'QUIT'
+                return
+            except pillar.CredentialsNotSyncedError:
+                self.log.exception('Error checking/refreshing credentials.')
+                self.report({'ERROR'}, 'Please log in on Blender ID first.')
+                self._state = 'QUIT'
+                return
+
+            if user_id is None:
+                raise pillar.UserNotLoggedInError()
+
+            await self.swap_variations(context)
+        except Exception as ex:
+            self.log.exception('Unexpected exception caught.')
+            self.report({'ERROR'}, 'Unexpected error %s: %s' % (type(ex), ex))
+
+        self._state = 'QUIT'
+
+    async def swap_variations(self, context):
+        """Performs the download & swap."""
+
+        current_image = self.find_image_to_replace()
+        swap_to = await self.new_image_datablock(context, current_image)
+
+        # Select the image in the image editor (if the context is right).
+        if context.area.type == 'IMAGE_EDITOR':
+            context.space_data.image = swap_to
+
+        await self.swap_images(context, current_image, swap_to)
+
+    async def swap_images(self, context, swap_from: bpy.types.Image, swap_to: bpy.types.Image):
+        """Replaces 'swap_from' with 'swap_to' in certain node trees."""
+
+        # Iterate over a couple of places where the image can be used.
+        # TODO: replace with bpy.types.ID.user_remap() once we target Blender 2.78.
+
+        def interesting_nodes():
+            yield from context.scene.world.node_tree.nodes
+            for mat in bpy.data.materials:
+                yield from mat.node_tree.nodes
+
+        image_node_types = {'TEX_ENVIRONMENT', 'TEX_IMAGE'}
+        for node in interesting_nodes():
+            if node.type in image_node_types:
+                if node.image == swap_from:
+                    self.log.info('Swapping on world node %s' % node.name)
+                    node.image = swap_to
+
+        self.report({'INFO'}, 'Swapped %s with %s' % (swap_from.name, swap_to.name))
+
+    async def new_image_datablock(self, context, current_image) -> bpy.types.Image:
+        """Finds the swap-target datablock, loading it if it doesn't exist yet."""
+
+        image = image_by_file_uuid(self.file_uuid)
+
+        # Already loaded, so don't bother.
+        if image is not None:
+            return image
+
+        image_path = bpy.path.abspath(current_image.filepath)
+        image_dir = os.path.dirname(image_path)
+        node_dict = current_image['bcloud_node']
+        use_relative_path = current_image.filepath.startswith('//')
+
+        return await self.download_variation(context, node_dict, image_dir, use_relative_path)
+
+    def find_image_to_replace(self) -> bpy.types.Image:
+        return bpy.data.images[self.image_name]
+
+    async def download_variation(self, context,
+                                 node: dict,
+                                 local_path: str,
+                                 use_relative_path=False):
+
+        self._state = 'DOWNLOADING_TEXTURE'
+
+        top_texture_directory = bpy.path.abspath(context.scene.local_texture_dir)
+        meta_path = os.path.join(top_texture_directory, '.blender_cloud')
+
+        file_uuid = self.file_uuid
+        resolution = next(file_ref['resolution'] for file_ref in node['properties']['files']
+                          if file_ref['file'] == file_uuid)
+
+        self.log.info('Downloading file %r-%s to %s', file_uuid, resolution, local_path)
+        self.log.debug('Metadata will be stored at %s', meta_path)
+
+        def file_loading(file_path, file_desc):
+            self.log.info('Texture downloading to %s (%s)',
+                          file_path, utils.sizeof_fmt(file_desc['length']))
+
+        image_dblock = None
+
+        async def file_loaded(file_path, file_desc):
+            nonlocal image_dblock
+
+            self.log.info('Texture downloaded to %s', file_path)
+            image_dblock = load_image_dblock(file_path, use_relative_path, file_desc['_id'], node)
+
+        await pillar.download_file_by_uuid(file_uuid,
+                                           local_path,
+                                           meta_path,
+                                           map_type=resolution,
+                                           file_loading=file_loading,
+                                           file_loaded_sync=file_loaded,
+                                           future=self.signalling_future)
+        assert image_dblock is not None, 'Image downloaded but not downloaded? How strange.'
+
+        self.report({'INFO'}, 'Image download complete')
+        return image_dblock
+
+
 # store keymaps here to access after registration
 addon_keymaps = []
+
+
+def load_image_dblock(file_path, use_relative_path, file_uuid, node) -> bpy.types.Image:
+    """Loads an image from disk, returning the datablock.
+
+    Includes the file UUID and node information in the datablock ID properties.
+    """
+
+    if use_relative_path:
+        file_path = bpy.path.relpath(file_path)
+    image_dblock = bpy.data.images.load(filepath=file_path)
+    image_dblock['bcloud_file_uuid'] = file_uuid
+    image_dblock['bcloud_node_uuid'] = node['_id']
+    image_dblock['bcloud_node_type'] = node['node_type']
+    image_dblock['bcloud_node'] = pillar.node_to_id(node)
+
+    return image_dblock
+
+
+def image_by_file_uuid(file_uuid):
+    """Finds the image datablock by its file UUID.
+
+    Returns None if the image cannot be found.
+    """
+
+    image = next((img for img in bpy.data.images
+                  if img.get('bcloud_file_uuid') == file_uuid),
+                 None)
+    return image
 
 
 def image_editor_menu(self, context):
@@ -898,9 +1065,40 @@ def image_editor_menu(self, context):
                          icon_value=blender.icon('CLOUD'))
 
 
+def hdri_download_panel(self, context):
+    row = self.layout.row()
+    row.prop(context.window_manager, 'hdri_variation')
+    props = row.operator(PILLAR_OT_switch_hdri.bl_idname,
+                         text='Replace',
+                         icon_value=blender.icon('CLOUD'))
+    props.image_name = context.edit_image.name
+    props.file_uuid = context.window_manager.hdri_variation
+
+
+def hdri_variation_choices(self, context):
+    if context.area.type != 'IMAGE_EDITOR':
+        return []
+
+    image = context.edit_image
+    if 'bcloud_node' not in image:
+        return []
+
+    return [(file_doc['file'], file_doc['resolution'], '')
+            for file_doc in image['bcloud_node']['properties']['files']]
+
+
 def register():
     bpy.utils.register_class(BlenderCloudBrowser)
+    bpy.utils.register_class(PILLAR_OT_switch_hdri)
     bpy.types.IMAGE_MT_image.prepend(image_editor_menu)
+    bpy.types.IMAGE_PT_image_properties.append(hdri_download_panel)
+
+    # HDRi resolution switcher/chooser.
+    # TODO: when an image is selected, switch this property to its current resolution.
+    bpy.types.WindowManager.hdri_variation = bpy.props.EnumProperty(
+        name='HDRi variations',
+        items=hdri_variation_choices
+    )
 
     # handle the keymap
     wm = bpy.context.window_manager
@@ -920,5 +1118,10 @@ def unregister():
         km.keymap_items.remove(kmi)
     addon_keymaps.clear()
 
+    if hasattr(bpy.types.WindowManager, 'hdri_variation'):
+        del bpy.types.WindowManager.hdri_variation
+
     bpy.types.IMAGE_MT_image.remove(image_editor_menu)
+    bpy.types.IMAGE_PT_image_properties.remove(hdri_download_panel)
     bpy.utils.unregister_class(BlenderCloudBrowser)
+    bpy.utils.unregister_class(PILLAR_OT_switch_hdri)

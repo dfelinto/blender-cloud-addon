@@ -661,13 +661,14 @@ async def download_file_by_uuid(file_uuid,
 
     # Find the File document.
     file_desc = await pillar_call(pillarsdk.File.find, file_uuid, params={
-        'projection': {'link': 1, 'filename': 1},
+        'projection': {'link': 1, 'filename': 1, 'length': 1},
     })
 
     # Save the file document to disk
     metadata_file = os.path.join(metadata_directory, 'files', '%s.json' % file_uuid)
     save_as_json(file_desc, metadata_file)
 
+    # TODO: base the file name on the node name, not the filename in the file_desc.
     root, ext = os.path.splitext(file_desc['filename'])
     if not map_type or root.endswith(map_type):
         target_filename = '%s%s' % (root, ext)
