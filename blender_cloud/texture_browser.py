@@ -41,6 +41,7 @@ ITEM_PADDING_X = 5
 
 library_path = '/tmp'
 library_icons_path = os.path.join(os.path.dirname(__file__), "icons")
+log = logging.getLogger(__name__)
 
 
 class SpecialFolderNode(pillarsdk.Node):
@@ -1066,6 +1067,12 @@ def image_editor_menu(self, context):
 
 
 def hdri_download_panel(self, context):
+    # Only show for HDRi images.
+    if 'bcloud_node_type' not in context.edit_image:
+        return
+    if context.edit_image['bcloud_node_type'] != 'hdri':
+        return
+
     row = self.layout.row()
     row.prop(context.window_manager, 'hdri_variation')
     props = row.operator(PILLAR_OT_switch_hdri.bl_idname,
@@ -1083,8 +1090,17 @@ def hdri_variation_choices(self, context):
     if 'bcloud_node' not in image:
         return []
 
-    return [(file_doc['file'], file_doc['resolution'], '')
-            for file_doc in image['bcloud_node']['properties']['files']]
+    choices = [(file_doc['file'], file_doc['resolution'], '')
+               for file_doc in image['bcloud_node']['properties']['files']]
+
+    if context.window_manager.hdri_last_seen_image_name != image.name:
+        log.debug('Active image changed %s -> %s',
+                  context.window_manager.hdri_last_seen_image_name,
+                  image.name)
+        context.window_manager.hdri_last_seen_image_name = image.name
+        context.window_manager.hdri_variation = image['bcloud_file_uuid']
+
+    return choices
 
 
 def register():
@@ -1098,6 +1114,10 @@ def register():
     bpy.types.WindowManager.hdri_variation = bpy.props.EnumProperty(
         name='HDRi variations',
         items=hdri_variation_choices
+    )
+
+    bpy.types.WindowManager.hdri_last_seen_image_name = bpy.props.StringProperty(
+        default=''
     )
 
     # handle the keymap
