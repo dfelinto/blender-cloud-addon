@@ -821,6 +821,11 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
                 # We want to obtain the real node, not the fake one.
                 node = self.menu_item_stack[-1].node
 
+            if context.scene.local_texture_dir.startswith('//'):
+                # If the local texture dir is blendfile-relative,
+                # so should the image's file path be.
+                file_path = bpy.path.relpath(file_path)
+
             self.log.info('Texture downloaded to %r.', file_path)
             image_dblock = bpy.data.images.load(filepath=file_path)
             image_dblock['bcloud_file_uuid'] = file_desc['_id']
