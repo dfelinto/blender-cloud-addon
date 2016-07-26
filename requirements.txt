@@ -1,7 +1,7 @@
 # Primary requirements:
 -e git+https://github.com/sybrenstuvel/cachecontrol.git@sybren-filecache-delete-crash-fix#egg=CacheControl
 lockfile==0.12.2
-pillarsdk==1.4.0
+pillarsdk==1.5.0
 wheel==0.29.0
 
 # Secondary requirements:
