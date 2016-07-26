@@ -36,7 +36,7 @@ from pillarsdk.utils import sanitize_filename
 from . import cache
 
 SUBCLIENT_ID = 'PILLAR'
-TEXTURE_NODE_TYPES = {'texture', 'hdri', 'HDRI_FILE'}
+TEXTURE_NODE_TYPES = {'texture', 'hdri'}
 
 RFC1123_DATE_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'
 

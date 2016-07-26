@@ -494,11 +494,8 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
 
         project_uuid = self.current_path.project_uuid
         node_uuid = self.current_path.node_uuid
-        is_hdri_node = False
-        current_node = None
 
         if node_uuid:
-            current_node = self.path_stack[-1]
             # Query for sub-nodes of this node.
             self.log.debug('Getting subnodes for parent node %r', node_uuid)
             children = await pillar.get_nodes(parent_node_uuid=node_uuid,
