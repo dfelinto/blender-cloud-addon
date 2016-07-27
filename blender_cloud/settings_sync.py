@@ -445,7 +445,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             self.log.info('Unable to find node on Blender Cloud for %s', fname)
             return
 
-        async def file_downloaded(file_path: str, file_desc: pillarsdk.File):
+        async def file_downloaded(file_path: str, file_desc: pillarsdk.File, map_type: str):
             # Allow the caller to adjust the file before we move it into place.
 
             if fname.lower() == 'userpref.blend':
