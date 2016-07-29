@@ -22,6 +22,9 @@ cd $(dirname $(readlink -f $0))
 BCLOUD=$(ls ../dist/blender_cloud-*.addon.zip | tail -n 1)
 BID=$(ls ../../../blender-id-addon/dist/blender_id-*.addon.zip | tail -n 1)
 
+[ -z "$BCLOUD" ] && echo "BCloud addon not found" >&2
+[ -z "$BID" ] && echo "B'ID addon not found" >&2
+
 cp -va $BCLOUD $BID .
 
 BUNDLE=$(basename $BCLOUD)
