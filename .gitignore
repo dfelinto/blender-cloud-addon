@@ -1,7 +1,6 @@
 *.pyc
 *.swp
-*.blend
-*.blend[1-9]
+/*.blend*
 blender_cloud/wheels/*.whl
 /textures*/
 /test_*.py
