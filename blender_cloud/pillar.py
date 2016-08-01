@@ -198,11 +198,23 @@ pillar_semaphore = asyncio.Semaphore(3)
 
 
 async def pillar_call(pillar_func, *args, caching=True, **kwargs):
+    """Calls a Pillar function.
+
+    A semaphore is used to ensure that there won't be too many
+    calls to Pillar simultaneously.
+    """
+
     partial = functools.partial(pillar_func, *args, api=pillar_api(caching=caching), **kwargs)
     loop = asyncio.get_event_loop()
 
     async with pillar_semaphore:
         return await loop.run_in_executor(None, partial)
+
+
+def call(pillar_func, *args, **kwargs):
+    """Synchronous call to Pillar, ensures the correct Api object is used."""
+
+    return pillar_func(*args, api=pillar_api(), **kwargs)
 
 
 async def check_pillar_credentials(required_roles: set):

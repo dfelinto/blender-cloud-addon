@@ -20,7 +20,7 @@
 
 bl_info = {
     'name': 'Blender Cloud',
-    'author': 'Sybren A. Stüvel and Francesco Siddi',
+    "author": "Sybren A. Stüvel, Francesco Siddi, Inês Almeida, Antony Riakiotakis",
     'version': (1, 4, 3),
     'blender': (2, 77, 0),
     'location': 'Addon Preferences panel, and Ctrl+Shift+Alt+A anywhere for texture browser',
@@ -42,12 +42,13 @@ if 'pillar' in locals():
 
     pillar = importlib.reload(pillar)
     cache = importlib.reload(cache)
+    attract = importlib.reload(attract)
 else:
     from . import wheels
 
     wheels.load_wheels()
 
-    from . import pillar, cache
+    from . import pillar, cache, attract
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ def register():
     blender.register()
     settings_sync.register()
     image_sharing.register()
+    attract.register()
 
 
 def _monkey_patch_requests():
@@ -112,6 +114,7 @@ def unregister():
     from . import blender, texture_browser, async_loop, settings_sync, image_sharing
 
     image_sharing.unregister()
+    attract.unregister()
     settings_sync.unregister()
     blender.unregister()
     texture_browser.unregister()
