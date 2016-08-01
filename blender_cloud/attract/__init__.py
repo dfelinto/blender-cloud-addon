@@ -128,7 +128,7 @@ class AttractOperatorMixin:
 
         from .. import pillar
 
-        project = pillar.call(Project.find_one, {'where': {'_id': project_uuid}})
+        project = pillar.sync_call(Project.find_one, {'where': {'_id': project_uuid}})
         return project
 
     def find_node_type(self, node_type_name: str) -> dict:
@@ -189,7 +189,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
 
         # Create a Node item with the attract API
         node = Node(prop)
-        post = pillar.call(node.create)
+        post = pillar.sync_call(node.create)
 
         # Populate the strip with the freshly generated ObjectID and info
         if not post:
@@ -219,7 +219,7 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
 
         strip = active_strip(context)
         try:
-            node = pillar.call(Node.find, self.strip_atc_object_id)
+            node = pillar.sync_call(Node.find, self.strip_atc_object_id)
         except ResourceNotFound:
             self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
                         % self.strip_atc_object_id)
@@ -265,14 +265,14 @@ class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
         # print("Query Attract server with {0}".format(strip.atc_object_id))
         strip.atc_cut_out = strip.atc_cut_in + strip.frame_final_duration - 1
 
-        node = pillar.call(Node.find, strip.atc_object_id)
+        node = pillar.sync_call(Node.find, strip.atc_object_id)
         node.name = strip.atc_name
         node.description = strip.atc_description
         node.properties.notes = strip.atc_notes
 
         node.properties.cut_in = strip.atc_cut_in
         node.properties.cut_out = strip.atc_cut_out
-        pillar.call(node.update)
+        pillar.sync_call(node.update)
 
         self.report({'INFO'}, 'Shot was updated on Attract')
         return {'FINISHED'}
@@ -287,8 +287,8 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
         from .. import pillar
 
         strip = active_strip(context)
-        node = pillar.call(Node.find, strip.atc_object_id)
-        if not pillar.call(node.delete):
+        node = pillar.sync_call(Node.find, strip.atc_object_id)
+        if not pillar.sync_call(node.delete):
             print('Unable to delete the strip node on Attract.')
             return {'CANCELLED'}
 
@@ -328,7 +328,7 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
         if isinstance(node_type, set):  # in case of error
             return node_type
 
-        shots = pillar.call(Node.all, {
+        shots = pillar.sync_call(Node.all, {
             'where': {'node_type': node_type._id},
             'max_results': 100})
 
@@ -365,9 +365,9 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
             """
             # We get all nodes one by one. This is bad and stupid.
             try:
-                shot_node = pillar.call(Node.find, strip.atc_object_id)
+                shot_node = pillar.sync_call(Node.find, strip.atc_object_id)
                 shot_node.order = index + 1
-                pillar.call(shot_node.update)
+                pillar.sync_call(shot_node.update)
                 print('{0} - updating {1}'.format(shot_node.order, shot_node.name))
                 strip.atc_order = index
             except ResourceNotFound:
