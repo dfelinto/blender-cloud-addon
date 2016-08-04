@@ -256,7 +256,7 @@ async def refresh_pillar_credentials(required_roles: set):
     import blender_id
 
     from . import blender
-    pillar_endpoint = blender.preferences().pillar_server.rstrip('/')
+    pillar_endpoint = blender.preferences().pillar_server
 
     # Create a subclient token and send it to Pillar.
     # May raise a blender_id.BlenderIdCommError
