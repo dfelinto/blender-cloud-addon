@@ -287,7 +287,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
     async def upload_screenshot(self, context) -> pillarsdk.Node:
         """Takes a screenshot, saves it to a temp file, and uploads it."""
 
-        self.name = datetime.datetime.now().strftime('Screenshot-%Y-%m-%d-%H:%M:%S.png')
+        self.name = datetime.datetime.now().strftime('Screenshot-%Y-%m-%d-%H%M%S.png')
         self.report({'INFO'}, "Uploading %s '%s'" % (self.target.lower(), self.name))
 
         with tempfile.TemporaryDirectory() as tmpdir:
