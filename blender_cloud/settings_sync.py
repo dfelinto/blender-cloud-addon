@@ -234,11 +234,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
             self.bss_report({'ERROR'}, 'No Blender version to sync for was given.')
             return {'CANCELLED'}
 
-        async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
-
-        self.log.info('Starting synchronisation')
-        self._new_async_task(self.async_execute(context))
-        return {'RUNNING_MODAL'}
+        return async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
     def action_select(self, context):
         """Allows selection of the Blender version to use.

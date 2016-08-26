@@ -107,11 +107,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                 self.report({'ERROR'}, 'Datablock is dirty, save it first.')
                 return {'CANCELLED'}
 
-        async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
-
-        self.log.info('Starting sharing')
-        self._new_async_task(self.async_execute(context))
-        return {'RUNNING_MODAL'}
+        return async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
     async def async_execute(self, context):
         """Entry point of the asynchronous operator."""

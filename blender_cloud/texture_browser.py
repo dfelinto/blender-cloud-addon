@@ -288,10 +288,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         self._scroll_reset()
 
         context.window.cursor_modal_set('DEFAULT')
-        async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
-        self._new_async_task(self.async_execute(context))
-
-        return {'RUNNING_MODAL'}
+        return async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
 
     def modal(self, context, event):
         result = async_loop.AsyncModalOperatorMixin.modal(self, context, event)
@@ -849,13 +846,6 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
 
     file_uuid = bpy.props.StringProperty(name='file_uuid',
                                          description='File ID to download')
-
-    def invoke(self, context, event):
-        async_loop.AsyncModalOperatorMixin.invoke(self, context, event)
-
-        self.log.info('Starting')
-        self._new_async_task(self.async_execute(context))
-        return {'RUNNING_MODAL'}
 
     async def async_execute(self, context):
         """Entry point of the asynchronous operator."""
