@@ -7,3 +7,4 @@ blender_cloud/wheels/*.whl
 /dist/
 /build/
 /addon-bundle/*.zip
+__pycache__
