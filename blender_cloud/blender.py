@@ -29,7 +29,7 @@ from bpy.types import AddonPreferences, Operator, WindowManager, Scene, Property
 from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty
 import rna_prop_ui
 
-from . import pillar
+from . import pillar, async_loop
 
 PILLAR_SERVER_URL = 'https://cloud.blender.org/api/'
 # PILLAR_SERVER_URL = 'http://pillar:5001/api/'
@@ -45,6 +45,8 @@ def redraw(self, context):
 
 
 def blender_syncable_versions(self, context):
+    """Returns the list of items used by SyncStatusProperties.version EnumProperty."""
+
     bss = context.window_manager.blender_sync_status
     versions = bss.available_blender_versions
     if not versions:
@@ -104,6 +106,42 @@ class SyncStatusProperties(PropertyGroup):
         self['available_blender_versions'] = new_versions
 
 
+def bcloud_available_projects(self, context):
+    """Returns the list of items used by BlenderCloudProjectGroup.project EnumProperty."""
+
+    bcp = context.window_manager.bcloud_projects
+    projs = bcp.available_projects
+    if not projs:
+        return [('', 'No projects available in your Blender Cloud', '')]
+    return [(p['_id'], p['name'], '') for p in projs]
+
+
+class BlenderCloudProjectGroup(PropertyGroup):
+    status = EnumProperty(
+        items=[
+            ('NONE', 'NONE', 'We have done nothing at all yet'),
+            ('IDLE', 'IDLE', 'User requested something, which is done, and we are now idle'),
+            ('FETCHING', 'FETCHING', 'Fetching available projects from Blender Cloud'),
+        ],
+        name='status',
+        update=redraw)
+
+    project = EnumProperty(
+        items=bcloud_available_projects,
+        name='Cloud project',
+        description='Which Blender Cloud project to work with')
+
+    # List of projects is stored in 'available_projects' ID property,
+    # because I don't know how to store a variable list of strings in a proper RNA property.
+    @property
+    def available_projects(self) -> list:
+        return self.get('available_projects', [])
+
+    @available_projects.setter
+    def available_projects(self, new_projects):
+        self['available_projects'] = new_projects
+
+
 class BlenderCloudPreferences(AddonPreferences):
     bl_idname = ADDON_NAME
 
@@ -125,6 +163,12 @@ class BlenderCloudPreferences(AddonPreferences):
         name='Open browser after sharing file',
         description='When enabled, Blender will open a webbrowser',
         default=True
+    )
+
+    default_project = StringProperty(
+        name='Default project',
+        description='Default project, used by Attract',
+        default=''
     )
 
     def draw(self, context):
@@ -205,8 +249,15 @@ class BlenderCloudPreferences(AddonPreferences):
         # Image Share stuff
         share_box = layout.box()
         share_box.label('Image Sharing on Blender Cloud', icon_value=icon('CLOUD'))
-        texture_box.enabled = msg_icon != 'ERROR'
+        share_box.enabled = msg_icon != 'ERROR'
         share_box.prop(self, 'open_browser_after_share')
+
+        # Attract stuff
+        attract_box = layout.box()
+        attract_box.enabled = msg_icon != 'ERROR'
+        attract_row = attract_box.row(align=True)
+        attract_row.label('Attract', icon_value=icon('CLOUD'))
+        self.draw_attract_buttons(attract_row, context.window_manager.bcloud_projects)
 
     def draw_subscribe_button(self, layout):
         layout.operator('pillar.subscribe', icon='WORLD')
@@ -241,6 +292,25 @@ class BlenderCloudPreferences(AddonPreferences):
                                   icon='DOTSDOWN').action = 'SELECT'
         else:
             row_pull.label('Cloud Sync is running.')
+
+    def draw_attract_buttons(self, layout, bcp: BlenderCloudProjectGroup):
+        layout.enabled = bcp.status in {'NONE', 'IDLE'}
+        row_buttons = layout.row(align=True)
+
+        projects = bcp.available_projects
+        project = bcp.project
+        if bcp.status in {'NONE', 'IDLE'}:
+            if not projects or not project:
+                row_buttons.operator('pillar.projects',
+                                     text='Find project to load',
+                                     icon='FILE_REFRESH')
+            else:
+                row_buttons.prop(bcp, 'project')
+                row_buttons.operator('pillar.projects',
+                                     text='',
+                                     icon='FILE_REFRESH')
+        else:
+            row_buttons.label('Fetching available projects.')
 
 
 class PillarCredentialsUpdate(pillar.PillarOperatorMixin,
@@ -304,6 +374,59 @@ class PILLAR_OT_subscribe(Operator):
         return {'FINISHED'}
 
 
+class PILLAR_OT_projects(async_loop.AsyncModalOperatorMixin,
+                         pillar.PillarOperatorMixin,
+                         Operator):
+    """Fetches the projects available to the user, and ."""
+    bl_idname = 'pillar.projects'
+    bl_label = 'Fetch available projects'
+
+    stop_upon_exception = True
+
+    async def async_execute(self, context):
+        import pillarsdk
+        from .pillar import pillar_call
+
+        db_user = await self.check_credentials(context, ())
+        user_id = db_user['_id']
+        self.log.info('Going to fetch projects for user %s', user_id)
+
+        context.window_manager.bcloud_projects.status = 'FETCHING'
+
+        # Get all projects, except the home project.
+        projects_user = await pillar_call(
+            pillarsdk.Project.all,
+            {'where': {'user': user_id,
+                       'category': {'$ne': 'home'}},
+             'sort': '-_created',
+             'projection': {'_id': True,
+                            'name': True},
+             })
+
+        projects_shared = await pillar_call(
+            pillarsdk.Project.all,
+            {'where': {'user': {'$ne': user_id},
+                       'permissions.groups.group': {'$in': db_user.groups},
+                       'is_private': True},
+             'sort': '-_created',
+             'projection': {'_id': True,
+                            'name': True},
+             })
+
+        # We need to convert to regular dicts before storing in ID properties.
+        # Also don't store more properties than we need.
+        projects = [{'_id': p['_id'], 'name': p['name']} for p in projects_user['_items']] + \
+                   [{'_id': p['_id'], 'name': p['name']} for p in projects_shared['_items']]
+
+        context.window_manager.bcloud_projects.available_projects = projects
+
+        self.quit()
+
+    def quit(self):
+        bpy.context.window_manager.bcloud_projects.status = 'IDLE'
+        super().quit()
+
+
 class PILLAR_PT_image_custom_properties(rna_prop_ui.PropertyPanel, bpy.types.Panel):
     """Shows custom properties in the image editor."""
 
@@ -356,7 +479,9 @@ def register():
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
     bpy.utils.register_class(SyncStatusProperties)
+    bpy.utils.register_class(BlenderCloudProjectGroup)
     bpy.utils.register_class(PILLAR_OT_subscribe)
+    bpy.utils.register_class(PILLAR_OT_projects)
     bpy.utils.register_class(PILLAR_PT_image_custom_properties)
 
     addon_prefs = preferences()
@@ -378,6 +503,7 @@ def register():
         update=default_if_empty)
 
     WindowManager.blender_sync_status = PointerProperty(type=SyncStatusProperties)
+    WindowManager.bcloud_projects = PointerProperty(type=BlenderCloudProjectGroup)
 
     load_custom_icons()
 
@@ -389,7 +515,9 @@ def unregister():
     bpy.utils.unregister_class(BlenderCloudPreferences)
     bpy.utils.unregister_class(SyncStatusProperties)
     bpy.utils.unregister_class(PILLAR_OT_subscribe)
+    bpy.utils.unregister_class(PILLAR_OT_projects)
     bpy.utils.unregister_class(PILLAR_PT_image_custom_properties)
 
     del WindowManager.last_blender_cloud_location
     del WindowManager.blender_sync_status
+    del WindowManager.bcloud_projects

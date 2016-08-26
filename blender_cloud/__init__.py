@@ -42,13 +42,12 @@ if 'pillar' in locals():
 
     pillar = importlib.reload(pillar)
     cache = importlib.reload(cache)
-    attract = importlib.reload(attract)
 else:
     from . import wheels
 
     wheels.load_wheels()
 
-    from . import pillar, cache, attract
+    from . import pillar, cache
 
 log = logging.getLogger(__name__)
 
@@ -79,9 +78,10 @@ def register():
         texture_browser = reload_mod('texture_browser')
         settings_sync = reload_mod('settings_sync')
         image_sharing = reload_mod('image_sharing')
+        attract = reload_mod('attract')
     else:
         from . import (blender, texture_browser, async_loop, settings_sync, blendfile, home_project,
-                       image_sharing)
+                       image_sharing, attract)
 
     async_loop.setup_asyncio_executor()
     async_loop.register()
@@ -111,7 +111,7 @@ def _monkey_patch_requests():
 
 
 def unregister():
-    from . import blender, texture_browser, async_loop, settings_sync, image_sharing
+    from . import blender, texture_browser, async_loop, settings_sync, image_sharing, attract
 
     image_sharing.unregister()
     attract.unregister()
