@@ -241,7 +241,7 @@ async def check_pillar_credentials(required_roles: set):
         profile.save_json()
         raise NotSubscribedToCloudError()
 
-    return pillar_user_id
+    return db_user
 
 
 async def refresh_pillar_credentials(required_roles: set):
@@ -780,7 +780,7 @@ def is_cancelled(future: asyncio.Future) -> bool:
 
 class PillarOperatorMixin:
     async def check_credentials(self, context, required_roles) -> bool:
-        """Checks credentials with Pillar, and if ok returns the user ID.
+        """Checks credentials with Pillar, and if ok returns the user document from Pillar/MongoDB.
 
         Returns None if the user cannot be found, or if the user is not a Cloud subscriber.
         """
@@ -788,7 +788,7 @@ class PillarOperatorMixin:
         # self.report({'INFO'}, 'Checking Blender Cloud credentials')
 
         try:
-            user_id = await check_pillar_credentials(required_roles)
+            db_user = await check_pillar_credentials(required_roles)
         except NotSubscribedToCloudError:
             self._log_subscription_needed()
             raise
@@ -796,10 +796,10 @@ class PillarOperatorMixin:
             self.log.info('Credentials not synced, re-syncing automatically.')
         else:
             self.log.info('Credentials okay.')
-            return user_id
+            return db_user
 
         try:
-            user_id = await refresh_pillar_credentials(required_roles)
+            db_user = await refresh_pillar_credentials(required_roles)
         except NotSubscribedToCloudError:
             self._log_subscription_needed()
             raise
@@ -807,7 +807,7 @@ class PillarOperatorMixin:
             self.log.error('User not logged in on Blender ID.')
         else:
             self.log.info('Credentials refreshed and ok.')
-            return user_id
+            return db_user
 
         return None
 

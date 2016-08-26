@@ -281,7 +281,8 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
         try:
             # Refresh credentials
             try:
-                self.user_id = await self.check_credentials(context, REQUIRES_ROLES_FOR_SYNC)
+                db_user = await self.check_credentials(context, REQUIRES_ROLES_FOR_SYNC)
+                self.user_id = db_user['_id']
                 log.debug('Found user ID: %s', self.user_id)
             except pillar.NotSubscribedToCloudError:
                 self.log.exception('User not subscribed to cloud.')

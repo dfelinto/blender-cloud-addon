@@ -363,13 +363,13 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         self.log.debug('Checking credentials')
 
         try:
-            user_id = await self.check_credentials(context, REQUIRED_ROLES_FOR_TEXTURE_BROWSER)
+            db_user = await self.check_credentials(context, REQUIRED_ROLES_FOR_TEXTURE_BROWSER)
         except pillar.NotSubscribedToCloudError:
             self.log.info('User not subscribed to Blender Cloud.')
             self._show_subscribe_screen()
             return None
 
-        if user_id is None:
+        if db_user is None:
             raise pillar.UserNotLoggedInError()
 
         await self.async_download_previews()
@@ -854,7 +854,8 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
 
         try:
             try:
-                user_id = await self.check_credentials(context, REQUIRED_ROLES_FOR_TEXTURE_BROWSER)
+                db_user = await self.check_credentials(context, REQUIRED_ROLES_FOR_TEXTURE_BROWSER)
+                user_id = db_user['_id']
             except pillar.NotSubscribedToCloudError:
                 self.log.exception('User not subscribed to cloud.')
                 self.report({'ERROR'}, 'Please subscribe to the Blender Cloud.')

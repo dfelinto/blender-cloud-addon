@@ -117,8 +117,8 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
         try:
             # Refresh credentials
             try:
-                self.user_id = await self.check_credentials(context,
-                                                            REQUIRES_ROLES_FOR_IMAGE_SHARING)
+                db_user = await self.check_credentials(context, REQUIRES_ROLES_FOR_IMAGE_SHARING)
+                self.user_id = db_user['_id']
                 self.log.debug('Found user ID: %s', self.user_id)
             except pillar.NotSubscribedToCloudError:
                 self.log.exception('User not subscribed to cloud.')
