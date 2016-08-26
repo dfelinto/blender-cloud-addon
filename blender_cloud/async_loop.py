@@ -178,6 +178,7 @@ class AsyncModalOperatorMixin:
     log = logging.getLogger('%s.AsyncModalOperatorMixin' % __name__)
 
     _state = 'INITIALIZING'
+    stop_upon_exception = False
 
     def invoke(self, context, event):
         context.window_manager.modal_handler_add(self)
@@ -195,6 +196,10 @@ class AsyncModalOperatorMixin:
         """
         return
 
+    def quit(self):
+        """Signals the state machine to stop this operator from running."""
+        self._state = 'QUIT'
+
     def execute(self, context):
         return self.invoke(context, None)
 
@@ -206,6 +211,11 @@ class AsyncModalOperatorMixin:
             if ex is not None:
                 self._state = 'EXCEPTION'
                 self.log.error('Exception while running task: %s', ex)
+                if self.stop_upon_exception:
+                    self.quit()
+                    self._finish(context)
+                    return {'FINISHED'}
+
                 return {'RUNNING_MODAL'}
 
         if self._state == 'QUIT':
