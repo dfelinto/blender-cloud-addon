@@ -135,7 +135,7 @@ class AttractOperatorMixin:
         from .. import pillar, blender
 
         prefs = blender.preferences()
-        project = self.find_project(prefs.project_uuid)
+        project = self.find_project(prefs.attract_project.project)
 
         # FIXME: Eve doesn't seem to handle the $elemMatch projection properly,
         # even though it works fine in MongoDB itself. As a result, we have to
@@ -184,7 +184,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
                                'cut_out': strip.frame_offset_start + strip.frame_final_duration},
                 'order': 0,
                 'node_type': 'shot',
-                'project': blender.preferences().project_uuid,
+                'project': blender.preferences().attract_project.project,
                 'user': user_uuid}
 
         # Create a Node item with the attract API
