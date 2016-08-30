@@ -109,8 +109,8 @@ class SyncStatusProperties(PropertyGroup):
 def bcloud_available_projects(self, context):
     """Returns the list of items used by BlenderCloudProjectGroup.project EnumProperty."""
 
-    bcp = context.window_manager.bcloud_projects
-    projs = bcp.available_projects
+    attr_proj = preferences().attract_project
+    projs = attr_proj.available_projects
     if not projs:
         return [('', 'No projects available in your Blender Cloud', '')]
     return [(p['_id'], p['name'], '') for p in projs]
@@ -165,11 +165,7 @@ class BlenderCloudPreferences(AddonPreferences):
         default=True
     )
 
-    default_project = StringProperty(
-        name='Default project',
-        description='Default project, used by Attract',
-        default=''
-    )
+    attract_project = PointerProperty(type=BlenderCloudProjectGroup)
 
     def draw(self, context):
         import textwrap
@@ -257,7 +253,7 @@ class BlenderCloudPreferences(AddonPreferences):
         attract_box.enabled = msg_icon != 'ERROR'
         attract_row = attract_box.row(align=True)
         attract_row.label('Attract', icon_value=icon('CLOUD'))
-        self.draw_attract_buttons(attract_row, context.window_manager.bcloud_projects)
+        self.draw_attract_buttons(attract_row, self.attract_project)
 
     def draw_subscribe_button(self, layout):
         layout.operator('pillar.subscribe', icon='WORLD')
@@ -391,7 +387,7 @@ class PILLAR_OT_projects(async_loop.AsyncModalOperatorMixin,
         user_id = db_user['_id']
         self.log.info('Going to fetch projects for user %s', user_id)
 
-        context.window_manager.bcloud_projects.status = 'FETCHING'
+        preferences().attract_project.status = 'FETCHING'
 
         # Get all projects, except the home project.
         projects_user = await pillar_call(
@@ -418,12 +414,12 @@ class PILLAR_OT_projects(async_loop.AsyncModalOperatorMixin,
         projects = [{'_id': p['_id'], 'name': p['name']} for p in projects_user['_items']] + \
                    [{'_id': p['_id'], 'name': p['name']} for p in projects_shared['_items']]
 
-        context.window_manager.bcloud_projects.available_projects = projects
+        preferences().attract_project.available_projects = projects
 
         self.quit()
 
     def quit(self):
-        bpy.context.window_manager.bcloud_projects.status = 'IDLE'
+        preferences().attract_project.status = 'IDLE'
         super().quit()
 
 
@@ -476,10 +472,10 @@ def icon(icon_name: str) -> int:
 
 
 def register():
+    bpy.utils.register_class(BlenderCloudProjectGroup)
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
     bpy.utils.register_class(SyncStatusProperties)
-    bpy.utils.register_class(BlenderCloudProjectGroup)
     bpy.utils.register_class(PILLAR_OT_subscribe)
     bpy.utils.register_class(PILLAR_OT_projects)
     bpy.utils.register_class(PILLAR_PT_image_custom_properties)
@@ -503,7 +499,6 @@ def register():
         update=default_if_empty)
 
     WindowManager.blender_sync_status = PointerProperty(type=SyncStatusProperties)
-    WindowManager.bcloud_projects = PointerProperty(type=BlenderCloudProjectGroup)
 
     load_custom_icons()
 
@@ -511,6 +506,7 @@ def register():
 def unregister():
     unload_custom_icons()
 
+    bpy.utils.unregister_class(BlenderCloudProjectGroup)
     bpy.utils.unregister_class(PillarCredentialsUpdate)
     bpy.utils.unregister_class(BlenderCloudPreferences)
     bpy.utils.unregister_class(SyncStatusProperties)
@@ -520,4 +516,3 @@ def unregister():
 
     del WindowManager.last_blender_cloud_location
     del WindowManager.blender_sync_status
-    del WindowManager.bcloud_projects
