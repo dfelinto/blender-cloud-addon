@@ -125,7 +125,7 @@ class PILLAR_OT_image_share(pillar.PillarOperatorMixin,
                 self.report({'ERROR'}, 'Please subscribe to the Blender Cloud.')
                 self._state = 'QUIT'
                 return
-            except pillar.CredentialsNotSyncedError:
+            except pillar.UserNotLoggedInError:
                 self.log.exception('Error checking/refreshing credentials.')
                 self.report({'ERROR'}, 'Please log in on Blender ID first.')
                 self._state = 'QUIT'

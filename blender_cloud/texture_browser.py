@@ -861,13 +861,13 @@ class PILLAR_OT_switch_hdri(pillar.PillarOperatorMixin,
                 self.report({'ERROR'}, 'Please subscribe to the Blender Cloud.')
                 self._state = 'QUIT'
                 return
-            except pillar.CredentialsNotSyncedError:
+            except pillar.UserNotLoggedInError:
                 self.log.exception('Error checking/refreshing credentials.')
                 self.report({'ERROR'}, 'Please log in on Blender ID first.')
                 self._state = 'QUIT'
                 return
 
-            if user_id is None:
+            if not user_id:
                 raise pillar.UserNotLoggedInError()
 
             await self.download_and_replace(context)

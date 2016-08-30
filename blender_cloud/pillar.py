@@ -782,7 +782,8 @@ class PillarOperatorMixin:
     async def check_credentials(self, context, required_roles) -> bool:
         """Checks credentials with Pillar, and if ok returns the user document from Pillar/MongoDB.
 
-        Returns None if the user cannot be found, or if the user is not a Cloud subscriber.
+        :raises UserNotLoggedInError: if the user is not logged in
+        :raises NotSubscribedToCloudError: if the user does not have any of the required roles
         """
 
         # self.report({'INFO'}, 'Checking Blender Cloud credentials')
@@ -803,13 +804,15 @@ class PillarOperatorMixin:
         except NotSubscribedToCloudError:
             self._log_subscription_needed()
             raise
+        except CredentialsNotSyncedError:
+            self.log.info('Credentials not synced after refreshing, handling as not logged in.')
+            raise UserNotLoggedInError('Not logged in.')
         except UserNotLoggedInError:
             self.log.error('User not logged in on Blender ID.')
+            raise
         else:
             self.log.info('Credentials refreshed and ok.')
             return db_user
-
-        return None
 
     def _log_subscription_needed(self):
         self.log.warning(

@@ -289,7 +289,7 @@ class PILLAR_OT_sync(pillar.PillarOperatorMixin,
                 self.bss_report({'SUBSCRIBE'}, 'Please subscribe to the Blender Cloud.')
                 self._state = 'QUIT'
                 return
-            except pillar.CredentialsNotSyncedError:
+            except pillar.UserNotLoggedInError:
                 self.log.exception('Error checking/refreshing credentials.')
                 self.bss_report({'ERROR'}, 'Please log in on Blender ID first.')
                 self._state = 'QUIT'
