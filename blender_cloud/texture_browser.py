@@ -968,6 +968,11 @@ def _hdri_download_panel(self, current_image):
         props.file_uuid = current_image.hdri_variation
 
 
+# Storage for variation labels, as the strings in EnumProperty items
+# MUST be kept in Python memory.
+variation_label_storage = {}
+
+
 def hdri_variation_choices(self, context):
     if context.area.type == 'IMAGE_EDITOR':
         image = context.edit_image
@@ -979,8 +984,11 @@ def hdri_variation_choices(self, context):
     if 'bcloud_node' not in image:
         return []
 
-    choices = [(file_doc['file'], file_doc['resolution'], '')
-               for file_doc in image['bcloud_node']['properties']['files']]
+    choices = []
+    for file_doc in image['bcloud_node']['properties']['files']:
+        label = file_doc['resolution']
+        variation_label_storage[label] = label
+        choices.append((file_doc['file'], label, ''))
 
     return choices
 
