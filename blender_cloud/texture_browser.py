@@ -258,8 +258,9 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
     scroll_offset_space_left = 0
 
     def invoke(self, context, event):
-        # Refuse to start if the file hasn't been saved.
-        if context.blend_data.is_dirty:
+        # Refuse to start if the file hasn't been saved. It's okay if
+        # it's dirty, we just need to know where '//' points to.
+        if not os.path.exists(context.blend_data.filepath):
             self.report({'ERROR'}, 'Please save your Blend file before using '
                                    'the Blender Cloud addon.')
             return {'CANCELLED'}
