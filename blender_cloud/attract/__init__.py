@@ -37,6 +37,7 @@
 # }
 
 import functools
+import logging
 
 if "bpy" in locals():
     import importlib
@@ -51,6 +52,8 @@ from pillarsdk.projects import Project
 from pillarsdk.exceptions import ResourceNotFound
 
 from bpy.types import Operator, Panel, AddonPreferences
+
+log = logging.getLogger(__name__)
 
 
 def active_strip(context):
@@ -86,15 +89,13 @@ class ToolsPanel(Panel):
         strip_types = {'MOVIE', 'IMAGE'}
         if strip and strip.atc_object_id and strip.type in strip_types:
             layout.prop(strip, 'atc_name', text='Name')
-            layout.prop(strip, 'atc_description', text='Description')
-            layout.prop(strip, 'atc_notes', text='Notes')
             layout.prop(strip, 'atc_status', text='Status')
-            layout.prop(strip, 'atc_cut_in')
 
             # Create a special sub-layout for read-only properties.
             ro_sub = layout.column(align=True)
             ro_sub.enabled = False
-            ro_sub.prop(strip, 'atc_cut_out')
+            ro_sub.prop(strip, 'atc_description', text='Description')
+            ro_sub.prop(strip, 'atc_notes', text='Notes')
 
             if strip.atc_is_synced:
                 layout.operator('attract.shot_submit_update')
@@ -165,7 +166,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
         if strip.atc_object_id:
             return
 
-        node_type = self.find_node_type('shot')
+        node_type = self.find_node_type('attract_shot')
         if isinstance(node_type, set):  # in case of error
             return node_type
 
@@ -180,10 +181,11 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
                 'description': '',
                 'properties': {'status': 'on_hold',
                                'notes': '',
-                               'cut_in': strip.frame_offset_start,
-                               'cut_out': strip.frame_offset_start + strip.frame_final_duration},
+                               'trim_start_in_frames': strip.frame_offset_start,
+                               'duration_in_edit_in_frames': strip.frame_final_duration,
+                               'cut_in_timeline_in_frames': strip.frame_final_start},
                 'order': 0,
-                'node_type': 'shot',
+                'node_type': 'attract_shot',
                 'project': blender.preferences().attract_project.project,
                 'user': user_uuid}
 
@@ -201,8 +203,6 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
         strip.atc_name = node['name']
         strip.atc_description = node['description']
         strip.atc_notes = node['properties']['notes']
-        strip.atc_cut_in = node['properties']['cut_in']
-        strip.atc_cut_out = node['properties']['cut_out']
 
         draw.tag_redraw_all_sequencer_editors()
 
@@ -211,7 +211,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
 
 class AttractShotRelink(AttractOperatorMixin, Operator):
     bl_idname = "attract.shot_relink"
-    bl_label = "Relink to Attract"
+    bl_label = "Relink from Attract"
     strip_atc_object_id = bpy.props.StringProperty()
 
     def execute(self, context):
@@ -228,9 +228,11 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
         strip.atc_object_id = self.strip_atc_object_id
         strip.atc_is_synced = True
         strip.atc_name = node.name
-        strip.atc_cut_in = node.properties.cut_in
-        strip.atc_cut_out = node.properties.cut_out
-        strip.atc_description = node.description
+
+        # We do NOT set the position/cuts of the shot, that always has to come from Blender.
+        strip.atc_status = node.properties.status
+        strip.atc_notes = node.properties.notes or ''
+        strip.atc_description = node.description or ''
 
         self.report({'INFO'}, "Shot {0} relinked".format(node.name))
         draw.tag_redraw_all_sequencer_editors()
@@ -252,27 +254,24 @@ class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
     bl_description = 'Sends local changes to Attract'
 
     def execute(self, context):
+        import pillarsdk
         from .. import pillar
 
         strip = active_strip(context)
+        patch = {
+            'op': 'from-blender',
+            '$set': {
+                'name': strip.atc_name,
+                'properties.trim_start_in_frames': strip.frame_offset_start,
+                'properties.duration_in_edit_in_frames': strip.frame_final_duration,
+                'properties.cut_in_timeline_in_frames': strip.frame_final_start,
+                'properties.status': strip.atc_status,
+            }
+        }
 
-        # Update cut_in and cut_out properties on the strip
-        # strip.atc_cut_in = strip.frame_offset_start
-        # strip.atc_cut_out = strip.frame_offset_start + strip.frame_final_duration
-        # strip.atc_cut_in = strip.frame_final_start
-        # strip.atc_cut_out = strip.frame_final_end
-
-        # print("Query Attract server with {0}".format(strip.atc_object_id))
-        strip.atc_cut_out = strip.atc_cut_in + strip.frame_final_duration - 1
-
-        node = pillar.sync_call(Node.find, strip.atc_object_id)
-        node.name = strip.atc_name
-        node.description = strip.atc_description
-        node.properties.notes = strip.atc_notes
-
-        node.properties.cut_in = strip.atc_cut_in
-        node.properties.cut_out = strip.atc_cut_out
-        pillar.sync_call(node.update)
+        node = pillarsdk.Node({'_id': strip.atc_object_id})
+        result = pillar.sync_call(node.patch, patch)
+        log.info('PATCH result: %s', result)
 
         self.report({'INFO'}, 'Shot was updated on Attract')
         return {'FINISHED'}
@@ -387,11 +386,16 @@ def register():
     bpy.types.Sequence.atc_notes = bpy.props.StringProperty(name="Shot notes")
     bpy.types.Sequence.atc_cut_in = bpy.props.IntProperty(name="Cut in")
     bpy.types.Sequence.atc_cut_out = bpy.props.IntProperty(name="Cut out")
+
+    # TODO: get this from the project's node type definition.
     bpy.types.Sequence.atc_status = bpy.props.EnumProperty(
         items=[
             ('on_hold', 'On hold', 'The shot is on hold'),
             ('todo', 'Todo', 'Waiting'),
-            ('in_progress', 'In progress', 'The show has been assigned')],
+            ('in_progress', 'In progress', 'The show has been assigned'),
+            ('review', 'Review', ''),
+            ('final', 'Final', ''),
+        ],
         name="Status")
     bpy.types.Sequence.atc_order = bpy.props.IntProperty(name="Order")
 
