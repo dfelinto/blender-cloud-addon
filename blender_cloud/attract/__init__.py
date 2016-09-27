@@ -49,7 +49,7 @@ else:
 import bpy
 from pillarsdk.nodes import Node
 from pillarsdk.projects import Project
-from pillarsdk.exceptions import ResourceNotFound
+from pillarsdk import exceptions as sdk_exceptions
 
 from bpy.types import Operator, Panel, AddonPreferences
 
@@ -112,7 +112,8 @@ class ToolsPanel(Panel):
             layout.operator('attract.shot_relink')
         else:
             layout.label(text='Select a Movie or Image strip')
-        layout.operator('attract.shots_order_update')
+
+        layout.operator(AttractShotSubmitSelected.bl_idname)
 
 
 class AttractOperatorMixin:
@@ -151,26 +152,8 @@ class AttractOperatorMixin:
 
         return node_type
 
-
-class AttractShotSubmitNew(AttractOperatorMixin, Operator):
-    bl_idname = "attract.shot_submit_new"
-    bl_label = "Submit to Attract"
-
-    @classmethod
-    def poll(cls, context):
-        strip = active_strip(context)
-        return not strip.atc_object_id
-
-    def execute(self, context):
+    def submit_new_strip(self, strip):
         from .. import pillar, blender
-
-        strip = active_strip(context)
-        if strip.atc_object_id:
-            return
-
-        node_type = self.find_node_type('attract_shot')
-        if isinstance(node_type, set):  # in case of error
-            return node_type
 
         # Define the shot properties
         user_uuid = pillar.pillar_user_uuid()
@@ -208,7 +191,66 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
 
         draw.tag_redraw_all_sequencer_editors()
 
-        return {'FINISHED'}
+    def submit_update(self, strip):
+        import pillarsdk
+        from .. import pillar
+
+        patch = {
+            'op': 'from-blender',
+            '$set': {
+                'name': strip.atc_name,
+                'properties.trim_start_in_frames': strip.frame_offset_start,
+                'properties.duration_in_edit_in_frames': strip.frame_final_duration,
+                'properties.cut_in_timeline_in_frames': strip.frame_final_start,
+                'properties.status': strip.atc_status,
+            }
+        }
+
+        node = pillarsdk.Node({'_id': strip.atc_object_id})
+        result = pillar.sync_call(node.patch, patch)
+        log.info('PATCH result: %s', result)
+
+    def relink(self, strip, atc_object_id):
+        from .. import pillar
+
+        try:
+            node = pillar.sync_call(Node.find, atc_object_id)
+        except (sdk_exceptions.ResourceNotFound, sdk_exceptions.MethodNotAllowed):
+            self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
+                        % atc_object_id)
+            return {'CANCELLED'}
+
+        strip.atc_is_synced = True
+        strip.atc_name = node.name
+        strip.atc_object_id = node['_id']
+
+        # We do NOT set the position/cuts of the shot, that always has to come from Blender.
+        strip.atc_status = node.properties.status
+        strip.atc_notes = node.properties.notes or ''
+        strip.atc_description = node.description or ''
+
+        draw.tag_redraw_all_sequencer_editors()
+
+
+class AttractShotSubmitNew(AttractOperatorMixin, Operator):
+    bl_idname = "attract.shot_submit_new"
+    bl_label = "Submit to Attract"
+
+    @classmethod
+    def poll(cls, context):
+        strip = active_strip(context)
+        return not strip.atc_object_id
+
+    def execute(self, context):
+        strip = active_strip(context)
+        if strip.atc_object_id:
+            return
+
+        node_type = self.find_node_type('attract_shot')
+        if isinstance(node_type, set):  # in case of error
+            return node_type
+
+        return self.submit_new_strip(strip) or {'FINISHED'}
 
 
 class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
@@ -221,34 +263,19 @@ class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
         return strip is not None and getattr(strip, 'atc_object_id', None)
 
     def execute(self, context):
-        from .. import pillar
-
         strip = active_strip(context)
-        try:
-            node = pillar.sync_call(Node.find, strip.atc_object_id)
-        except ResourceNotFound:
-            self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
-                        % strip.strip_atc_object_id)
-            return {'CANCELLED'}
 
-        strip.atc_is_synced = True
-        strip.atc_name = node.name
-
-        # We do NOT set the position/cuts of the shot, that always has to come from Blender.
-        strip.atc_status = node.properties.status
-        strip.atc_notes = node.properties.notes or ''
-        strip.atc_description = node.description or ''
-
-        draw.tag_redraw_all_sequencer_editors()
+        status = self.relink(strip, strip.atc_object_id)
+        if isinstance(status, set):
+            return status
 
         self.report({'INFO'}, "Shot {0} refreshed".format(strip.atc_name))
-
         return {'FINISHED'}
 
 
 class AttractShotRelink(AttractShotFetchUpdate):
     bl_idname = "attract.shot_relink"
-    bl_label = "Relink from Attract"
+    bl_label = "Relink with Attract"
 
     strip_atc_object_id = bpy.props.StringProperty()
 
@@ -259,12 +286,15 @@ class AttractShotRelink(AttractShotFetchUpdate):
 
     def execute(self, context):
         strip = active_strip(context)
-        strip.atc_object_id = self.strip_atc_object_id
-        status = AttractShotFetchUpdate.execute(self, context)
 
-        if 'FINISHED' in status:
-            self.report({'INFO'}, "Shot {0} relinked".format(strip.atc_name))
-        return status
+        status = self.relink(strip, self.strip_atc_object_id)
+        if isinstance(status, set):
+            return status
+
+        strip.atc_object_id = self.strip_atc_object_id
+        self.report({'INFO'}, "Shot {0} relinked".format(strip.atc_name))
+
+        return {'FINISHED'}
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
@@ -281,24 +311,8 @@ class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
     bl_description = 'Sends local changes to Attract'
 
     def execute(self, context):
-        import pillarsdk
-        from .. import pillar
-
         strip = active_strip(context)
-        patch = {
-            'op': 'from-blender',
-            '$set': {
-                'name': strip.atc_name,
-                'properties.trim_start_in_frames': strip.frame_offset_start,
-                'properties.duration_in_edit_in_frames': strip.frame_final_duration,
-                'properties.cut_in_timeline_in_frames': strip.frame_final_start,
-                'properties.status': strip.atc_status,
-            }
-        }
-
-        node = pillarsdk.Node({'_id': strip.atc_object_id})
-        result = pillar.sync_call(node.patch, patch)
-        log.info('PATCH result: %s', result)
+        self.submit_update(strip)
 
         self.report({'INFO'}, 'Shot was updated on Attract')
         return {'FINISHED'}
@@ -309,8 +323,14 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
     bl_label = 'Delete'
     bl_description = 'Remove from Attract'
 
+    confirm = bpy.props.BoolProperty(name='confirm')
+
     def execute(self, context):
         from .. import pillar
+
+        if not self.confirm:
+            self.report({'WARNING'}, 'Delete aborted.')
+            return {'CANCELLED'}
 
         strip = active_strip(context)
         node = pillar.sync_call(Node.find, strip.atc_object_id)
@@ -321,6 +341,14 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
         remove_atc_props(strip)
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+        col.prop(self, 'confirm', text="I hereby confirm I want to delete this shot.")
 
 
 class AttractStripUnlink(AttractOperatorMixin, Operator):
@@ -341,68 +369,39 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
         return {'FINISHED'}
 
 
-class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
-    bl_idname = 'attract.shots_order_update'
-    bl_label = 'Update shots order'
+class AttractShotSubmitSelected(AttractOperatorMixin, Operator):
+    bl_idname = 'attract.submit_selected'
+    bl_label = 'Submit all selected'
+    bl_description = 'Submits all selected strips to Attract'
+
+    @classmethod
+    def poll(cls, context):
+        return bool(context.selected_sequences)
 
     def execute(self, context):
-        from .. import pillar
-
-        # Get all shot nodes from server, build dictionary using ObjectID
-        # as indexes
+        # Check that the project is set up for Attract.
         node_type = self.find_node_type('attract_shot')
-        if isinstance(node_type, set):  # in case of error
+        if isinstance(node_type, set):
             return node_type
 
-        shots = pillar.sync_call(Node.all, {
-            'where': {'node_type': node_type._id},
-            'max_results': 100})
+        for strip in context.selected_sequences:
+            status = self.submit(strip)
+            if isinstance(status, set):
+                return status
 
-        shots = shots._items
+        self.report({'INFO'}, 'All selected strips sent to Attract.')
 
-        # TODO (fsiddi) take into account pagination. Currently we do not do it
-        # and it makes this dict useless.
-        # We should use the pagination info from the node_type_list query and
-        # keep querying until we have all the items.
-        shots_dict = {}
-        for shot in shots:
-            shots_dict[shot._id] = shot
-
-        # Build ordered list of strips from the edit.
-        strips_with_atc_object_id = [strip
-                                     for strip in context.scene.sequence_editor.sequences_all
-                                     if strip.atc_object_id]
-
-        strips_with_atc_object_id.sort(
-            key=lambda strip: strip.frame_final_start)
-
-        for index, strip in enumerate(strips_with_atc_object_id):
-            """
-            # Currently we use the code below to force update all nodes.
-            # Check that the shot is in the list of retrieved shots
-            if strip.atc_order != index: #or shots_dict[strip.atc_object_id]['order'] != index:
-                # If there is an update in the order, retrieve and update
-                # the node, as well as the VSE strip
-                # shot_node = Node.find(strip.atc_object_id)
-                # shot_node.order = index
-                # shot_node.update()
-                # strip.atc_order = index
-                print ("{0} > {1}".format(strip.atc_order, index))
-            """
-            # We get all nodes one by one. This is bad and stupid.
-            try:
-                shot_node = pillar.sync_call(Node.find, strip.atc_object_id)
-                shot_node.order = index + 1
-                pillar.sync_call(shot_node.update)
-                print('{0} - updating {1}'.format(shot_node.order, shot_node.name))
-                strip.atc_order = index
-            except ResourceNotFound:
-                # Reset the attract properties for any shot not found on the server
-                print("Warning: shot {0} not found".format(strip.atc_object_id))
-                remove_atc_props(strip)
-
-        draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
+
+    def submit(self, strip):
+        atc_object_id = getattr(strip, 'atc_object_id', None)
+
+        # Submit as new?
+        if not atc_object_id:
+            return self.submit_new_strip(strip)
+
+        # Or just save to Attract.
+        return self.submit_update(strip)
 
 
 def register():
@@ -430,8 +429,8 @@ def register():
     bpy.utils.register_class(AttractShotSubmitUpdate)
     bpy.utils.register_class(AttractShotDelete)
     bpy.utils.register_class(AttractStripUnlink)
-    bpy.utils.register_class(AttractShotsOrderUpdate)
     bpy.utils.register_class(AttractShotFetchUpdate)
+    bpy.utils.register_class(AttractShotSubmitSelected)
     draw.callback_enable()
 
 
