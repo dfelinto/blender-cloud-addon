@@ -65,8 +65,7 @@ def active_strip(context):
 
 def remove_atc_props(strip):
     """Resets the attract custom properties assigned to a VSE strip"""
-    strip.atc_cut_in = 0
-    strip.atc_cut_out = 0
+
     strip.atc_name = ""
     strip.atc_description = ""
     strip.atc_object_id = ""
