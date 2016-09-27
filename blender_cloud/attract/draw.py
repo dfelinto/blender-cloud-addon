@@ -19,56 +19,53 @@
 # <pep8-80 compliant>
 
 import bpy
+import logging
+import collections
 
-def get_strip_rectf(strip):
-     # Get x and y in terms of the grid's frames and channels
+log = logging.getLogger(__name__)
+
+strip_status_colour = {
+    None: (0.7, 0.7, 0.7),
+    'approved': (0.6392156862745098, 0.8784313725490196, 0.30196078431372547),
+    'final': (0.9058823529411765, 0.9607843137254902, 0.8274509803921568),
+    'in_progress': (1.0, 0.7450980392156863, 0.0),
+    'on_hold': (0.796078431372549, 0.6196078431372549, 0.08235294117647059),
+    'review': (0.8941176470588236, 0.9607843137254902, 0.9764705882352941),
+    'todo': (1.0, 0.5019607843137255, 0.5019607843137255)
+}
+
+
+def get_strip_rectf(strip, pixel_size_y):
+    # Get x and y in terms of the grid's frames and channels
     x1 = strip.frame_final_start
     x2 = strip.frame_final_end
-    y1 = strip.channel + 0.2
-    y2 = y1 + 0.25
+    y1 = strip.channel + 0.2 - pixel_size_y
+    y2 = y1 + 2 * pixel_size_y
 
-    return [x1, y1, x2, y2]
+    return (x1, y1, x2, y2)
 
 
-def draw_underline_in_strip(scroller_width, strip_coords, curx, color):
-    from bgl import glColor4f, glRectf, glEnable, glDisable, GL_BLEND
+def draw_underline_in_strip(strip_coords, pixel_size, color):
+    from bgl import glColor3f, glRectf, glEnable, glDisable, GL_BLEND
 
     context = bpy.context
 
     # Strip coords
     s_x1, s_y1, s_x2, s_y2 = strip_coords
 
-    # Drawing coords
-    x = 0 
-    d_y1 = s_y1
-    d_y2 = s_y2
-    d_x1 = s_x1
-    d_x2 = s_x2
-
-    # be careful not to override the current frame line
+    # be careful not to draw over the current frame line
     cf_x = context.scene.frame_current_final
-    y = 0
 
-    r, g, b, a = color
-    glColor4f(r, g, b, a)
+    glColor3f(*color)
     glEnable(GL_BLEND)
 
-    # // this checks if the strip range overlaps the current f. label range
-    # // then it would need a polygon? to draw around it
-    # // TODO: check also if label display is ON
-    # Check if the current frame label overlaps the strip
-    # label_height = scroller_width * 2
-    # if d_y1 < label_height:
-    #    if cf_x < d_x2 and d_x1 < cf_x + label_height:
-    #        print("ALARM!!")
-
-    if d_x1 < cf_x and cf_x < d_x2:
+    if s_x1 < cf_x < s_x2:
         # Bad luck, the line passes our strip
-        glRectf(d_x1, d_y1, cf_x - curx, d_y2)
-        glRectf(cf_x + curx, d_y1, d_x2, d_y2)
+        glRectf(s_x1, s_y1, cf_x - pixel_size, s_y2)
+        glRectf(cf_x + pixel_size, s_y1, s_x2, s_y2)
     else:
         # Normal, full rectangle draw
-        glRectf(d_x1, d_y1, d_x2, d_y2)
+        glRectf(s_x1, s_y1, s_x2, s_y2)
 
     glDisable(GL_BLEND)
 
@@ -79,32 +76,37 @@ def draw_callback_px():
     if not context.scene.sequence_editor:
         return
 
-    # Calculate scroller width, dpi and pixelsize dependent
-    pixel_size = context.user_preferences.system.pixel_size
-    dpi = context.user_preferences.system.dpi
-    dpi_fac = pixel_size * dpi / 72
-    # A normal widget unit is 20, but the scroller is apparently 16
-    scroller_width = 16 * dpi_fac
-
     region = context.region
     xwin1, ywin1 = region.view2d.region_to_view(0, 0)
     xwin2, ywin2 = region.view2d.region_to_view(region.width, region.height)
-    curx, cury = region.view2d.region_to_view(1, 0)
-    curx = curx - xwin1
+    one_pixel_further_x, one_pixel_further_y = region.view2d.region_to_view(1, 1)
+    pixel_size_x = one_pixel_further_x - xwin1
+    pixel_size_y = one_pixel_further_y - ywin1
 
-    for strip in context.scene.sequence_editor.sequences:
-        if strip.atc_object_id:
+    if context.scene.sequence_editor.meta_stack:
+        strips = context.scene.sequence_editor.meta_stack[-1].sequences
+    else:
+        strips = context.scene.sequence_editor.sequences
 
-            # Get corners (x1, y1), (x2, y2) of the strip rectangle in px region coords
-            strip_coords = get_strip_rectf(strip)
+    for strip in strips:
+        if not strip.atc_object_id:
+            continue
 
-            #check if any of the coordinates are out of bounds
-            if strip_coords[0] > xwin2 or strip_coords[2] < xwin1 or strip_coords[1] > ywin2 or strip_coords[3] < ywin1:
-                continue
+        # Get corners (x1, y1), (x2, y2) of the strip rectangle in px region coords
+        strip_coords = get_strip_rectf(strip, pixel_size_y)
 
-            # Draw
-            color = [1.0, 0, 1.0, 0.5]
-            draw_underline_in_strip(scroller_width, strip_coords, curx, color)
+        # check if any of the coordinates are out of bounds
+        if strip_coords[0] > xwin2 or strip_coords[2] < xwin1 or strip_coords[1] > ywin2 or \
+                        strip_coords[3] < ywin1:
+            continue
+
+        # Draw
+        status = strip.atc_status
+        if status in strip_status_colour:
+            color = strip_status_colour[status]
+        else:
+            color = strip_status_colour[None]
+        draw_underline_in_strip(strip_coords, pixel_size_x, color)
 
 
 def tag_redraw_all_sequencer_editors():
@@ -117,6 +119,7 @@ def tag_redraw_all_sequencer_editors():
                 for region in area.regions:
                     if region.type == 'WINDOW':
                         region.tag_redraw()
+
 
 # This is a list so it can be changed instead of set
 # if it is only changed, it does not have to be declared as a global everywhere
