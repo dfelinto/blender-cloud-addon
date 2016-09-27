@@ -98,7 +98,10 @@ class ToolsPanel(Panel):
             ro_sub.prop(strip, 'atc_notes', text='Notes')
 
             if strip.atc_is_synced:
-                layout.operator('attract.shot_submit_update')
+                row = layout.row(align=True)
+                row.operator('attract.shot_submit_update')
+                row.operator(AttractShotFetchUpdate.bl_idname,
+                             text='', icon='FILE_REFRESH')
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
@@ -209,23 +212,26 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
         return {'FINISHED'}
 
 
-class AttractShotRelink(AttractOperatorMixin, Operator):
-    bl_idname = "attract.shot_relink"
-    bl_label = "Relink from Attract"
-    strip_atc_object_id = bpy.props.StringProperty()
+class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
+    bl_idname = "attract.shot_fetch_update"
+    bl_label = "Fetch update from Attract"
+
+    @classmethod
+    def poll(cls, context):
+        strip = active_strip(context)
+        return strip is not None and getattr(strip, 'atc_object_id', None)
 
     def execute(self, context):
         from .. import pillar
 
         strip = active_strip(context)
         try:
-            node = pillar.sync_call(Node.find, self.strip_atc_object_id)
+            node = pillar.sync_call(Node.find, strip.atc_object_id)
         except ResourceNotFound:
             self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
-                        % self.strip_atc_object_id)
+                        % strip.strip_atc_object_id)
             return {'CANCELLED'}
 
-        strip.atc_object_id = self.strip_atc_object_id
         strip.atc_is_synced = True
         strip.atc_name = node.name
 
@@ -234,10 +240,32 @@ class AttractShotRelink(AttractOperatorMixin, Operator):
         strip.atc_notes = node.properties.notes or ''
         strip.atc_description = node.description or ''
 
-        self.report({'INFO'}, "Shot {0} relinked".format(node.name))
         draw.tag_redraw_all_sequencer_editors()
 
+        self.report({'INFO'}, "Shot {0} refreshed".format(strip.atc_name))
+
         return {'FINISHED'}
+
+
+class AttractShotRelink(AttractShotFetchUpdate):
+    bl_idname = "attract.shot_relink"
+    bl_label = "Relink from Attract"
+
+    strip_atc_object_id = bpy.props.StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        strip = active_strip(context)
+        return strip is not None and not getattr(strip, 'atc_object_id', None)
+
+    def execute(self, context):
+        strip = active_strip(context)
+        strip.atc_object_id = self.strip_atc_object_id
+        status = AttractShotFetchUpdate.execute(self, context)
+
+        if 'FINISHED' in status:
+            self.report({'INFO'}, "Shot {0} relinked".format(strip.atc_name))
+        return status
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
@@ -404,6 +432,7 @@ def register():
     bpy.utils.register_class(AttractShotDelete)
     bpy.utils.register_class(AttractStripUnlink)
     bpy.utils.register_class(AttractShotsOrderUpdate)
+    bpy.utils.register_class(AttractShotFetchUpdate)
     draw.callback_enable()
 
 
