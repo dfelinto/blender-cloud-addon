@@ -46,7 +46,7 @@ def get_strip_rectf(strip, pixel_size_y):
 
 
 def draw_underline_in_strip(strip_coords, pixel_size, color):
-    from bgl import glColor3f, glRectf, glEnable, glDisable, GL_BLEND
+    from bgl import glColor4f, glRectf, glEnable, glDisable, GL_BLEND
 
     context = bpy.context
 
@@ -56,7 +56,7 @@ def draw_underline_in_strip(strip_coords, pixel_size, color):
     # be careful not to draw over the current frame line
     cf_x = context.scene.frame_current_final
 
-    glColor3f(*color)
+    glColor4f(*color)
     glEnable(GL_BLEND)
 
     if s_x1 < cf_x < s_x2:
@@ -106,7 +106,10 @@ def draw_callback_px():
             color = strip_status_colour[status]
         else:
             color = strip_status_colour[None]
-        draw_underline_in_strip(strip_coords, pixel_size_x, color)
+
+        alpha = 1.0 if strip.atc_is_synced else 0.5
+
+        draw_underline_in_strip(strip_coords, pixel_size_x, color + (alpha, ))
 
 
 def tag_redraw_all_sequencer_editors():
