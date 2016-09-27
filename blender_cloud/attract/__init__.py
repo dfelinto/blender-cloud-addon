@@ -350,7 +350,7 @@ class AttractShotsOrderUpdate(AttractOperatorMixin, Operator):
 
         # Get all shot nodes from server, build dictionary using ObjectID
         # as indexes
-        node_type = self.find_node_type('shot')
+        node_type = self.find_node_type('attract_shot')
         if isinstance(node_type, set):  # in case of error
             return node_type
 
