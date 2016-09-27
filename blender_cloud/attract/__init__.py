@@ -384,8 +384,6 @@ def register():
     bpy.types.Sequence.atc_name = bpy.props.StringProperty(name="Shot Name")
     bpy.types.Sequence.atc_description = bpy.props.StringProperty(name="Shot description")
     bpy.types.Sequence.atc_notes = bpy.props.StringProperty(name="Shot notes")
-    bpy.types.Sequence.atc_cut_in = bpy.props.IntProperty(name="Cut in")
-    bpy.types.Sequence.atc_cut_out = bpy.props.IntProperty(name="Cut out")
 
     # TODO: get this from the project's node type definition.
     bpy.types.Sequence.atc_status = bpy.props.EnumProperty(
@@ -416,8 +414,6 @@ def unregister():
     del bpy.types.Sequence.atc_name
     del bpy.types.Sequence.atc_description
     del bpy.types.Sequence.atc_notes
-    del bpy.types.Sequence.atc_cut_in
-    del bpy.types.Sequence.atc_cut_out
     del bpy.types.Sequence.atc_status
     del bpy.types.Sequence.atc_order
     bpy.utils.unregister_module(__name__)
