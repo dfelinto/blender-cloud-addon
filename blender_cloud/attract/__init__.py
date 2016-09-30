@@ -355,16 +355,15 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
 class AttractStripUnlink(AttractOperatorMixin, Operator):
     bl_idname = 'attract.strip_unlink'
     bl_label = 'Unlink'
-    bl_description = 'Remove Attract props from the strip'
+    bl_description = 'Remove Attract props from the selected strip(s)'
 
     def execute(self, context):
-        strip = active_strip(context)
+        for strip in context.selected_sequences:
+            atc_object_id = getattr(strip, 'atc_object_id')
+            remove_atc_props(strip)
 
-        atc_object_id = getattr(strip, 'atc_object_id')
-        remove_atc_props(strip)
-
-        if atc_object_id:
-            self.report({'INFO'}, 'Shot %s has been unlinked from Attract.' % atc_object_id)
+            if atc_object_id:
+                self.report({'INFO'}, 'Shot %s has been unlinked from Attract.' % atc_object_id)
 
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
