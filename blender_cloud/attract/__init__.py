@@ -164,7 +164,7 @@ class AttractOperatorMixin:
 
         prop = {'name': strip.name,
                 'description': '',
-                'properties': {'status': 'on_hold',
+                'properties': {'status': 'todo',
                                'notes': '',
                                'trim_start_in_frames': strip.frame_offset_start,
                                'duration_in_edit_in_frames': strip.frame_final_duration,
@@ -188,6 +188,7 @@ class AttractOperatorMixin:
         strip.atc_name = node['name']
         strip.atc_description = node['description']
         strip.atc_notes = node['properties']['notes']
+        strip.atc_status = node['properties']['status']
 
         draw.tag_redraw_all_sequencer_editors()
 
