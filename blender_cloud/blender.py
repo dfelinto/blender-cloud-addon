@@ -361,6 +361,7 @@ class PILLAR_OT_subscribe(Operator):
     """Opens a browser to subscribe the user to the Cloud."""
     bl_idname = 'pillar.subscribe'
     bl_label = 'Subscribe to the Cloud'
+    bl_description = "Opens a page in a web browser to subscribe to the Blender Cloud"
 
     def execute(self, context):
         import webbrowser
