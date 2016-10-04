@@ -378,12 +378,21 @@ class PILLAR_OT_projects(async_loop.AsyncModalOperatorMixin,
     bl_label = 'Fetch available projects'
 
     stop_upon_exception = True
+    _log = logging.getLogger('bpy.ops.%s' % bl_idname)
 
     async def async_execute(self, context):
         import pillarsdk
         from .pillar import pillar_call
 
-        db_user = await self.check_credentials(context, ())
+        self._log.info('Checking credentials')
+        try:
+            db_user = await self.check_credentials(context, ())
+        except pillar.UserNotLoggedInError as ex:
+            self._log.info('Not logged in error raised: %s', ex)
+            self.report({'ERROR'}, 'Please log in on Blender ID first.')
+            self.quit()
+            return
+
         user_id = db_user['_id']
         self.log.info('Going to fetch projects for user %s', user_id)
 
