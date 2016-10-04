@@ -314,6 +314,7 @@ class PillarCredentialsUpdate(pillar.PillarOperatorMixin,
     """Updates the Pillar URL and tests the new URL."""
     bl_idname = 'pillar.credentials_update'
     bl_label = 'Update credentials'
+    bl_description = 'Resynchronises your Blender ID login with Blender Cloud'
 
     log = logging.getLogger('bpy.ops.%s' % bl_idname)
 
