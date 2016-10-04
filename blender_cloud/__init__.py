@@ -21,7 +21,7 @@
 bl_info = {
     'name': 'Blender Cloud',
     "author": "Sybren A. Stüvel, Francesco Siddi, Inês Almeida, Antony Riakiotakis",
-    'version': (1, 4, 3),
+    'version': (1, 4, 99),
     'blender': (2, 77, 0),
     'location': 'Addon Preferences panel, and Ctrl+Shift+Alt+A anywhere for texture browser',
     'description': 'Texture library browser and Blender Sync. Requires the Blender ID addon '
@@ -29,6 +29,7 @@ bl_info = {
     'wiki_url': 'http://wiki.blender.org/index.php/Extensions:2.6/Py/'
                 'Scripts/System/BlenderCloud',
     'category': 'System',
+    'warning': 'This is a beta version; the first to support Attract.'
 }
 
 import logging
