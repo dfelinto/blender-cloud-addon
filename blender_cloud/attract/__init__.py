@@ -404,6 +404,80 @@ class AttractShotSubmitSelected(AttractOperatorMixin, Operator):
         return self.submit_update(strip)
 
 
+class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
+    bl_idname = 'attract.open_meta_blendfile'
+    bl_label = 'Open Blendfile'
+    bl_description = 'Open Blendfile from movie strip metadata'
+
+    @classmethod
+    def poll(cls, context):
+        return bool(any(cls.filename_from_metadata(s) for s in context.selected_sequences))
+
+    @staticmethod
+    def filename_from_metadata(strip):
+        """Returns the blendfile name from the strip metadata, or None."""
+
+        # Metadata is a dict like:
+        # meta = {'END_FRAME': '88',
+        #         'BLEND_FILE': 'metadata-test.blend',
+        #         'SCENE': 'SüperSčene',
+        #         'FRAME_STEP': '1',
+        #         'START_FRAME': '32'}
+
+        meta = strip.get('metadata', None)
+        if not meta:
+            return None
+
+        return meta.get('BLEND_FILE', None) or None
+
+    def execute(self, context):
+        for s in context.selected_sequences:
+            fname = self.filename_from_metadata(s)
+            if not fname: continue
+
+            self.open_in_new_blender(fname)
+
+        return {'FINISHED'}
+
+    def open_in_new_blender(self, fname):
+        """
+        :type fname: pathlib.Path
+        """
+        import subprocess
+        import sys
+
+        cmd = [
+            bpy.app.binary_path,
+            str(fname),
+        ]
+
+        if '--enable-new-depsgraph' in sys.argv:
+            cmd[1:1] = ['--enable-new-depsgraph']
+
+        subprocess.Popen(cmd)
+
+
+def draw_strip_movie_meta(self, context):
+    strip = active_strip(context)
+    if not strip:
+        return
+
+    meta = strip.get('metadata', None)
+    if not meta:
+        return None
+
+    box = self.layout.column(align=True)
+    row = box.row(align=True)
+    fname = meta.get('BLEND_FILE', None) or None
+    if fname:
+        row.label('Original Blendfile: %s' % fname)
+        row.operator(ATTRACT_OT_open_meta_blendfile.bl_idname,
+                     text='', icon='FILE_BLEND')
+    sfra = meta.get('START_FRAME', '?')
+    efra = meta.get('END_FRAME', '?')
+    box.label('Original frame range: %s-%s' % (sfra, efra))
+
+
 def register():
     bpy.types.Sequence.atc_is_synced = bpy.props.BoolProperty(name="Is synced")
     bpy.types.Sequence.atc_object_id = bpy.props.StringProperty(name="Attract Object ID")
@@ -423,6 +497,8 @@ def register():
         name="Status")
     bpy.types.Sequence.atc_order = bpy.props.IntProperty(name="Order")
 
+    bpy.types.SEQUENCER_PT_edit.append(draw_strip_movie_meta)
+
     bpy.utils.register_class(ToolsPanel)
     bpy.utils.register_class(AttractShotSubmitNew)
     bpy.utils.register_class(AttractShotRelink)
@@ -431,6 +507,7 @@ def register():
     bpy.utils.register_class(AttractStripUnlink)
     bpy.utils.register_class(AttractShotFetchUpdate)
     bpy.utils.register_class(AttractShotSubmitSelected)
+    bpy.utils.register_class(ATTRACT_OT_open_meta_blendfile)
     draw.callback_enable()
 
 

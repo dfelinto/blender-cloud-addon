@@ -165,7 +165,15 @@ class BlenderCloudPreferences(AddonPreferences):
         default=True
     )
 
+    # TODO: store local path with the Attract project, so that people
+    # can switch projects and the local path switches with it.
     attract_project = PointerProperty(type=BlenderCloudProjectGroup)
+    attract_project_local_path = StringProperty(
+        name='Local project path',
+        description='Local path of your Attract project, used to search for blend files; '
+                    'usually best to set to an absolute path',
+        subtype='DIR_PATH',
+        default='//../')
 
     def draw(self, context):
         import textwrap
@@ -251,9 +259,7 @@ class BlenderCloudPreferences(AddonPreferences):
         # Attract stuff
         attract_box = layout.box()
         attract_box.enabled = msg_icon != 'ERROR'
-        attract_row = attract_box.row(align=True)
-        attract_row.label('Attract', icon_value=icon('CLOUD'))
-        self.draw_attract_buttons(attract_row, self.attract_project)
+        self.draw_attract_buttons(attract_box, self.attract_project)
 
     def draw_subscribe_button(self, layout):
         layout.operator('pillar.subscribe', icon='WORLD')
@@ -289,9 +295,12 @@ class BlenderCloudPreferences(AddonPreferences):
         else:
             row_pull.label('Cloud Sync is running.')
 
-    def draw_attract_buttons(self, layout, bcp: BlenderCloudProjectGroup):
-        layout.enabled = bcp.status in {'NONE', 'IDLE'}
-        row_buttons = layout.row(align=True)
+    def draw_attract_buttons(self, attract_box, bcp: BlenderCloudProjectGroup):
+        attract_row = attract_box.row(align=True)
+        attract_row.label('Attract', icon_value=icon('CLOUD'))
+
+        attract_row.enabled = bcp.status in {'NONE', 'IDLE'}
+        row_buttons = attract_row.row(align=True)
 
         projects = bcp.available_projects
         project = bcp.project
@@ -307,6 +316,8 @@ class BlenderCloudPreferences(AddonPreferences):
                                      icon='FILE_REFRESH')
         else:
             row_buttons.label('Fetching available projects.')
+
+        attract_box.prop(self, 'attract_project_local_path')
 
 
 class PillarCredentialsUpdate(pillar.PillarOperatorMixin,
