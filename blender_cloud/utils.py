@@ -16,6 +16,8 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
+import pathlib
+
 
 def sizeof_fmt(num: int, suffix='B') -> str:
     """Returns a human-readable size.
@@ -29,3 +31,34 @@ def sizeof_fmt(num: int, suffix='B') -> str:
         num /= 1024
 
     return '%.1f Yi%s' % (num, suffix)
+
+
+def find_in_path(path: pathlib.Path, filename: str) -> pathlib.Path:
+    """Performs a breadth-first search for the filename.
+
+    Returns the path that contains the file, or None if not found.
+    """
+
+    import collections
+
+    # Be lenient on our input type.
+    if isinstance(path, str):
+        path = pathlib.Path(path)
+
+    if not path.exists():
+        return None
+    assert path.is_dir()
+
+    to_visit = collections.deque([path])
+    while to_visit:
+        this_path = to_visit.popleft()
+
+        for subpath in this_path.iterdir():
+            if subpath.is_dir():
+                to_visit.append(subpath)
+                continue
+
+            if subpath.name == filename:
+                return subpath
+
+    return None

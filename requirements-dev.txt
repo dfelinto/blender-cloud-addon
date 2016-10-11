@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# Primary requirements
+pytest==3.0.3
+
+# Secondary requirements
+py==1.4.31
+
