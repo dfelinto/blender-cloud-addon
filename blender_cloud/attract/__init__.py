@@ -431,17 +431,23 @@ class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
         return meta.get('BLEND_FILE', None) or None
 
     def execute(self, context):
-        for s in context.selected_sequences:
-            fname = self.filename_from_metadata(s)
+        for strip in context.selected_sequences:
+            meta = strip.get('metadata', None)
+            if not meta:
+                continue
+
+            fname = meta.get('BLEND_FILE', None)
             if not fname: continue
 
-            self.open_in_new_blender(fname)
+            scene = meta.get('SCENE', None)
+            self.open_in_new_blender(fname, scene)
 
         return {'FINISHED'}
 
-    def open_in_new_blender(self, fname):
+    def open_in_new_blender(self, fname, scene):
         """
-        :type fname: pathlib.Path
+        :type fname: str
+        :type scene: str
         """
         import subprocess
         import sys
@@ -453,6 +459,9 @@ class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
 
         if '--enable-new-depsgraph' in sys.argv:
             cmd[1:1] = ['--enable-new-depsgraph']
+
+        if scene:
+            cmd.extend(['--scene', scene])
 
         subprocess.Popen(cmd)
 
