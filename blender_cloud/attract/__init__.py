@@ -457,8 +457,7 @@ class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
             str(fname),
         ]
 
-        if '--enable-new-depsgraph' in sys.argv:
-            cmd[1:1] = ['--enable-new-depsgraph']
+        cmd[1:1] = [v for v in sys.argv if v.startswith('--enable-')]
 
         if scene:
             cmd.extend(['--scene', scene])
