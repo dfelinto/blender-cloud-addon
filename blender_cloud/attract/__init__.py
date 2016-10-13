@@ -460,6 +460,8 @@ class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
         cmd[1:1] = [v for v in sys.argv if v.startswith('--enable-')]
 
         if scene:
+            cmd.extend(['--python-expr',
+                       'import bpy; bpy.context.screen.scene = bpy.data.scenes["%s"]' % scene])
             cmd.extend(['--scene', scene])
 
         subprocess.Popen(cmd)
