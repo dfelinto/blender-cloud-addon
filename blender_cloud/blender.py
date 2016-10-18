@@ -31,8 +31,9 @@ import rna_prop_ui
 
 from . import pillar, async_loop
 
-PILLAR_SERVER_URL = 'https://cloud.blender.org/api/'
-# PILLAR_SERVER_URL = 'http://pillar:5001/api/'
+PILLAR_WEB_SERVER_URL = 'https://cloud.blender.org/'
+# PILLAR_WEB_SERVER_URL = 'http://pillar-web:5001/'
+PILLAR_SERVER_URL = '%sapi/' % PILLAR_WEB_SERVER_URL
 
 ADDON_NAME = 'blender_cloud'
 log = logging.getLogger(__name__)
