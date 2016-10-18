@@ -215,7 +215,7 @@ class AttractOperatorMixin:
         from .. import pillar
 
         try:
-            node = pillar.sync_call(Node.find, atc_object_id)
+            node = pillar.sync_call(Node.find, atc_object_id, caching=False)
         except (sdk_exceptions.ResourceNotFound, sdk_exceptions.MethodNotAllowed):
             self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
                         % atc_object_id)
@@ -257,6 +257,7 @@ class AttractShotSubmitNew(AttractOperatorMixin, Operator):
 class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
     bl_idname = "attract.shot_fetch_update"
     bl_label = "Fetch update from Attract"
+    bl_description = 'Update status, description & notes from Attract'
 
     @classmethod
     def poll(cls, context):

@@ -218,10 +218,10 @@ async def pillar_call(pillar_func, *args, caching=True, **kwargs):
         return await loop.run_in_executor(None, partial)
 
 
-def sync_call(pillar_func, *args, **kwargs):
+def sync_call(pillar_func, *args, caching=True, **kwargs):
     """Synchronous call to Pillar, ensures the correct Api object is used."""
 
-    return pillar_func(*args, api=pillar_api(), **kwargs)
+    return pillar_func(*args, api=pillar_api(caching=caching), **kwargs)
 
 
 async def check_pillar_credentials(required_roles: set):
