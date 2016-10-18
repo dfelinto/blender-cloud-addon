@@ -101,6 +101,8 @@ class ToolsPanel(Panel):
                 row.operator('attract.shot_submit_update')
                 row.operator(AttractShotFetchUpdate.bl_idname,
                              text='', icon='FILE_REFRESH')
+                row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
+                             text='', icon='WORLD')
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
@@ -320,6 +322,26 @@ class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
         return {'FINISHED'}
 
 
+class ATTRACT_OT_shot_open_in_browser(AttractOperatorMixin, Operator):
+    bl_idname = 'attract.shot_open_in_browser'
+    bl_label = 'Open in browser'
+    bl_description = 'Opens a webbrowser to show the shot on Attract'
+
+    def execute(self, context):
+        from ..blender import PILLAR_WEB_SERVER_URL
+        import webbrowser
+        import urllib.parse
+
+        strip = active_strip(context)
+
+        url = urllib.parse.urljoin(PILLAR_WEB_SERVER_URL,
+                                   'nodes/%s/redir' % strip.atc_object_id)
+        webbrowser.open_new_tab(url)
+        self.report({'INFO'}, 'Opened a browser at %s' % url)
+
+        return {'FINISHED'}
+
+
 class AttractShotDelete(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shot_delete'
     bl_label = 'Delete'
@@ -519,6 +541,7 @@ def register():
     bpy.utils.register_class(AttractShotFetchUpdate)
     bpy.utils.register_class(AttractShotSubmitSelected)
     bpy.utils.register_class(ATTRACT_OT_open_meta_blendfile)
+    bpy.utils.register_class(ATTRACT_OT_shot_open_in_browser)
     draw.callback_enable()
 
 
