@@ -63,6 +63,17 @@ def active_strip(context):
         return None
 
 
+def selected_shots(context):
+    """Generator, yields selected strips if they are Attract shots."""
+
+    for strip in context.selected_sequences:
+        atc_object_id = getattr(strip, 'atc_object_id')
+        if not atc_object_id:
+            continue
+
+        yield strip
+
+
 def remove_atc_props(strip):
     """Resets the attract custom properties assigned to a VSE strip"""
 
@@ -86,7 +97,14 @@ class ToolsPanel(Panel):
         strip = active_strip(context)
         layout = self.layout
         strip_types = {'MOVIE', 'IMAGE'}
-        if strip and strip.atc_object_id and strip.type in strip_types:
+
+        selshots = list(selected_shots(context))
+        if strip and strip.type in strip_types and strip.atc_object_id:
+            if len(selshots) > 1:
+                noun = 'selected shots'
+            else:
+                noun = 'this shot'
+
             layout.prop(strip, 'atc_name', text='Name')
             layout.prop(strip, 'atc_status', text='Status')
 
@@ -98,7 +116,7 @@ class ToolsPanel(Panel):
 
             if strip.atc_is_synced:
                 row = layout.row(align=True)
-                row.operator('attract.shot_submit_update')
+                row.operator('attract.submit_selected', text='Submit %s' % noun)
                 row.operator(AttractShotFetchUpdate.bl_idname,
                              text='', icon='FILE_REFRESH')
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
@@ -106,16 +124,19 @@ class ToolsPanel(Panel):
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
-                dangerous_sub.operator('attract.shot_delete')
+                dangerous_sub.operator(AttractShotDelete.bl_idname)
                 dangerous_sub.operator('attract.strip_unlink')
 
-        elif strip and strip.type in strip_types:
-            layout.operator('attract.shot_submit_new')
+        elif context.selected_sequences:
+            if len(context.selected_sequences) > 1:
+                noun = 'selected strips'
+            else:
+                noun = 'this strip'
+            layout.operator(AttractShotSubmitSelected.bl_idname,
+                            text='Submit %s as new shot' % noun)
             layout.operator('attract.shot_relink')
         else:
             layout.label(text='Select a Movie or Image strip')
-
-        layout.operator(AttractShotSubmitSelected.bl_idname)
 
 
 class AttractOperatorMixin:
@@ -213,19 +234,22 @@ class AttractOperatorMixin:
         result = pillar.sync_call(node.patch, patch)
         log.info('PATCH result: %s', result)
 
-    def relink(self, strip, atc_object_id):
+    def relink(self, strip, atc_object_id, *, refresh=False):
         from .. import pillar
 
         try:
             node = pillar.sync_call(Node.find, atc_object_id, caching=False)
         except (sdk_exceptions.ResourceNotFound, sdk_exceptions.MethodNotAllowed):
-            self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to relink.'
-                        % atc_object_id)
+            verb = 'refresh' if refresh else 'relink'
+            self.report({'ERROR'}, 'Shot %r not found on the Attract server, unable to %s.'
+                        % (atc_object_id, verb))
+            strip.atc_is_synced = False
             return {'CANCELLED'}
 
         strip.atc_is_synced = True
-        strip.atc_name = node.name
-        strip.atc_object_id = node['_id']
+        if not refresh:
+            strip.atc_name = node.name
+            strip.atc_object_id = node['_id']
 
         # We do NOT set the position/cuts of the shot, that always has to come from Blender.
         strip.atc_status = node.properties.status
@@ -235,27 +259,6 @@ class AttractOperatorMixin:
         draw.tag_redraw_all_sequencer_editors()
 
 
-class AttractShotSubmitNew(AttractOperatorMixin, Operator):
-    bl_idname = "attract.shot_submit_new"
-    bl_label = "Submit to Attract"
-
-    @classmethod
-    def poll(cls, context):
-        strip = active_strip(context)
-        return not strip.atc_object_id
-
-    def execute(self, context):
-        strip = active_strip(context)
-        if strip.atc_object_id:
-            return
-
-        node_type = self.find_node_type('attract_shot')
-        if isinstance(node_type, set):  # in case of error
-            return node_type
-
-        return self.submit_new_strip(strip) or {'FINISHED'}
-
-
 class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
     bl_idname = "attract.shot_fetch_update"
     bl_label = "Fetch update from Attract"
@@ -263,17 +266,15 @@ class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
 
     @classmethod
     def poll(cls, context):
-        strip = active_strip(context)
-        return strip is not None and getattr(strip, 'atc_object_id', None)
+        return any(selected_shots(context))
 
     def execute(self, context):
-        strip = active_strip(context)
-
-        status = self.relink(strip, strip.atc_object_id)
-        if isinstance(status, set):
-            return status
-
-        self.report({'INFO'}, "Shot {0} refreshed".format(strip.atc_name))
+        for strip in selected_shots(context):
+            status = self.relink(strip, strip.atc_object_id, refresh=True)
+            # We don't abort when one strip fails. All selected shots should be
+            # refreshed, even if one can't be found (for example).
+            if not isinstance(status, set):
+                self.report({'INFO'}, "Shot {0} refreshed".format(strip.atc_name))
         return {'FINISHED'}
 
 
@@ -307,19 +308,6 @@ class AttractShotRelink(AttractShotFetchUpdate):
         layout = self.layout
         col = layout.column()
         col.prop(self, 'strip_atc_object_id', text='Shot ID')
-
-
-class AttractShotSubmitUpdate(AttractOperatorMixin, Operator):
-    bl_idname = 'attract.shot_submit_update'
-    bl_label = 'Submit update'
-    bl_description = 'Sends local changes to Attract'
-
-    def execute(self, context):
-        strip = active_strip(context)
-        self.submit_update(strip)
-
-        self.report({'INFO'}, 'Shot was updated on Attract')
-        return {'FINISHED'}
 
 
 class ATTRACT_OT_shot_open_in_browser(AttractOperatorMixin, Operator):
@@ -533,9 +521,7 @@ def register():
     bpy.types.SEQUENCER_PT_edit.append(draw_strip_movie_meta)
 
     bpy.utils.register_class(ToolsPanel)
-    bpy.utils.register_class(AttractShotSubmitNew)
     bpy.utils.register_class(AttractShotRelink)
-    bpy.utils.register_class(AttractShotSubmitUpdate)
     bpy.utils.register_class(AttractShotDelete)
     bpy.utils.register_class(AttractStripUnlink)
     bpy.utils.register_class(AttractShotFetchUpdate)
