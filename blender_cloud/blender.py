@@ -410,7 +410,7 @@ class PILLAR_OT_subscribe(Operator):
 class PILLAR_OT_projects(async_loop.AsyncModalOperatorMixin,
                          pillar.PillarOperatorMixin,
                          Operator):
-    """Fetches the projects available to the user, and ."""
+    """Fetches the projects available to the user"""
     bl_idname = 'pillar.projects'
     bl_label = 'Fetch available projects'
 
