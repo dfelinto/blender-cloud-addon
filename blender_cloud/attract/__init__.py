@@ -524,6 +524,7 @@ def register():
 
 def unregister():
     draw.callback_disable()
+    bpy.utils.unregister_module(__name__)
     del bpy.types.Sequence.atc_is_synced
     del bpy.types.Sequence.atc_object_id
     del bpy.types.Sequence.atc_name
@@ -531,4 +532,3 @@ def unregister():
     del bpy.types.Sequence.atc_notes
     del bpy.types.Sequence.atc_status
     del bpy.types.Sequence.atc_order
-    bpy.utils.unregister_module(__name__)
