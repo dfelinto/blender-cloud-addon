@@ -44,6 +44,29 @@ def redraw(self, context):
     context.area.tag_redraw()
 
 
+def pyside_cache(wrapped):
+    """Stores the result of the callable in Python-managed memory.
+
+    This is to work around the warning at
+    https://www.blender.org/api/blender_python_api_master/bpy.props.html#bpy.props.EnumProperty
+    """
+
+    import functools
+
+    @functools.wraps(wrapped)
+    # We can't use (*args, **kwargs), because EnumProperty explicitly checks
+    # for the number of fixed positional arguments.
+    def wrapper(self, context):
+        result = None
+        try:
+            result = wrapped(self, context)
+            return result
+        finally:
+            wrapped._cached_result = result
+    return wrapper
+
+
+@pyside_cache
 def blender_syncable_versions(self, context):
     """Returns the list of items used by SyncStatusProperties.version EnumProperty."""
 
@@ -106,6 +129,7 @@ class SyncStatusProperties(PropertyGroup):
         self['available_blender_versions'] = new_versions
 
 
+@pyside_cache
 def bcloud_available_projects(self, context):
     """Returns the list of items used by BlenderCloudProjectGroup.project EnumProperty."""
 
