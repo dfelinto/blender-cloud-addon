@@ -302,6 +302,15 @@ class AttractShotRelink(AttractShotFetchUpdate):
         return {'FINISHED'}
 
     def invoke(self, context, event):
+        maybe_id = context.window_manager.clipboard
+        if len(maybe_id) == 24:
+            try:
+                int(maybe_id, 16)
+            except ValueError:
+                pass
+            else:
+                self.strip_atc_object_id = maybe_id
+
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
