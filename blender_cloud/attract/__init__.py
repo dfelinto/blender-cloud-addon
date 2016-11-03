@@ -197,6 +197,7 @@ class AttractOperatorMixin:
                 'description': '',
                 'properties': {'status': 'todo',
                                'notes': '',
+                               'used_in_edit': True,
                                'trim_start_in_frames': strip.frame_offset_start,
                                'duration_in_edit_in_frames': strip.frame_final_duration,
                                'cut_in_timeline_in_frames': strip.frame_final_start},
@@ -254,6 +255,7 @@ class AttractOperatorMixin:
             strip.atc_is_synced = False
             return {'CANCELLED'}
 
+        pillar.sync_call(node.patch, {'op': 'relink'})
         strip.atc_is_synced = True
         if not refresh:
             strip.atc_name = node.name
@@ -391,6 +393,8 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
             remove_atc_props(strip)
 
             if atc_object_id:
+                node = Node({'_id': atc_object_id})
+                pillar.sync_call(node.patch, {'op': 'unlink'})
                 self.report({'INFO'}, 'Shot %s has been unlinked from Attract.' % atc_object_id)
 
         draw.tag_redraw_all_sequencer_editors()
