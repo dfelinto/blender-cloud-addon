@@ -341,8 +341,8 @@ class ATTRACT_OT_shot_open_in_browser(AttractOperatorMixin, Operator):
 
 class AttractShotDelete(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shot_delete'
-    bl_label = 'Delete'
-    bl_description = 'Remove from Attract'
+    bl_label = 'Delete Shot'
+    bl_description = 'Remove this shot from Attract'
 
     confirm = bpy.props.BoolProperty(name='confirm')
 
@@ -374,7 +374,7 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
 
 class AttractStripUnlink(AttractOperatorMixin, Operator):
     bl_idname = 'attract.strip_unlink'
-    bl_label = 'Unlink'
+    bl_label = 'Unlink shot from this strip'
     bl_description = 'Remove Attract props from the selected strip(s)'
 
     def execute(self, context):
