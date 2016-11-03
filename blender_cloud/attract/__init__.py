@@ -127,7 +127,8 @@ class ToolsPanel(Panel):
                              text='', icon='FILE_REFRESH')
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
                              text='', icon='WORLD')
-                sub.operator(ATTRACT_OT_make_shot_thumbnail.bl_idname)
+                sub.operator(ATTRACT_OT_make_shot_thumbnail.bl_idname,
+                             text='Render thumbnail for %s' % noun)
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
@@ -494,33 +495,6 @@ class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
         subprocess.Popen(cmd)
 
 
-@contextlib.contextmanager
-def thumbnail_render_settings(context, thumbnail_width=512):
-    orig_res_x = context.scene.render.resolution_x
-    orig_res_y = context.scene.render.resolution_y
-    orig_percentage = context.scene.render.resolution_percentage
-    orig_file_format = context.scene.render.image_settings.file_format
-    orig_quality = context.scene.render.image_settings.quality
-
-    try:
-        # Update the render size to something thumbnaily.
-        factor = orig_res_y / orig_res_x
-        context.scene.render.resolution_x = thumbnail_width
-        context.scene.render.resolution_y = round(thumbnail_width * factor)
-        context.scene.render.resolution_percentage = 100
-        context.scene.render.image_settings.file_format = 'JPEG'
-        context.scene.render.image_settings.quality = 85
-
-        yield
-    finally:
-        # Return the render settings to normal.
-        context.scene.render.resolution_x = orig_res_x
-        context.scene.render.resolution_y = orig_res_y
-        context.scene.render.resolution_percentage = orig_percentage
-        context.scene.render.image_settings.file_format = orig_file_format
-        context.scene.render.image_settings.quality = orig_quality
-
-
 class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
                                      async_loop.AsyncModalOperatorMixin,
                                      Operator):
@@ -530,16 +504,106 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
 
     stop_upon_exception = True
 
+    @classmethod
+    def poll(cls, context):
+        return bool(context.selected_sequences)
+
+    @contextlib.contextmanager
+    def thumbnail_render_settings(self, context, thumbnail_width=512):
+        # Remember current settings so we can restore them later.
+        orig_res_x = context.scene.render.resolution_x
+        orig_res_y = context.scene.render.resolution_y
+        orig_percentage = context.scene.render.resolution_percentage
+        orig_file_format = context.scene.render.image_settings.file_format
+        orig_quality = context.scene.render.image_settings.quality
+
+        try:
+            # Update the render size to something thumbnaily.
+            factor = orig_res_y / orig_res_x
+            context.scene.render.resolution_x = thumbnail_width
+            context.scene.render.resolution_y = round(thumbnail_width * factor)
+            context.scene.render.resolution_percentage = 100
+            context.scene.render.image_settings.file_format = 'JPEG'
+            context.scene.render.image_settings.quality = 85
+
+            yield
+        finally:
+            # Return the render settings to normal.
+            context.scene.render.resolution_x = orig_res_x
+            context.scene.render.resolution_y = orig_res_y
+            context.scene.render.resolution_percentage = orig_percentage
+            context.scene.render.image_settings.file_format = orig_file_format
+            context.scene.render.image_settings.quality = orig_quality
+
+    @contextlib.contextmanager
+    def temporary_current_frame(self, context):
+        current_frame = context.scene.frame_current
+        try:
+            yield
+        finally:
+            context.scene.frame_current = current_frame
+
     async def async_execute(self, context):
-        # Later: for strip in context.selected_sequences:
-        strip = active_strip(context)
+        nr_of_strips = len(context.selected_sequences)
+        do_multishot = nr_of_strips > 1
+
+        with self.temporary_current_frame(context):
+            if do_multishot:
+                context.window_manager.progress_begin(0, nr_of_strips)
+                try:
+                    self.report({'INFO'}, 'Rendering thumbnails for %i selected shots.' %
+                                nr_of_strips)
+
+                    for idx, strip in enumerate(context.selected_sequences):
+                        context.window_manager.progress_update(idx)
+                        # For multi-shot we can't just use the current frame (each thumb would be
+                        # identical), so instead we use the middle frame. The first/last frames
+                        # cannot be reliably used due to transitions with other shots.
+                        self.set_middle_frame(context, strip)
+                        await self.thumbnail_strip(context, strip)
+
+                        if self._state == 'QUIT':
+                            return
+                    context.window_manager.progress_update(nr_of_strips)
+                finally:
+                    context.window_manager.progress_end()
+
+            else:
+                strip = active_strip(context)
+                if not strip.frame_final_start <= context.scene.frame_current <= strip.frame_final_end:
+                    self.report({'WARNING'}, 'Rendering middle frame as thumbnail for active shot.')
+                    self.set_middle_frame(context, strip)
+                else:
+                    self.report({'INFO'}, 'Rendering current frame as thumbnail for active shot.')
+
+                context.window_manager.progress_begin(0, 1)
+                context.window_manager.progress_update(0)
+                try:
+                    await self.thumbnail_strip(context, strip)
+                finally:
+                    context.window_manager.progress_update(1)
+                    context.window_manager.progress_end()
+
+                if self._state == 'QUIT':
+                    return
+
+        self.report({'INFO'}, 'Thumbnail uploaded to Attract')
+        self.quit()
+
+    def set_middle_frame(self, context, strip):
+        """Sets the current frame to the middle frame of the strip."""
+
+        middle = round((strip.frame_final_start + strip.frame_final_end) / 2)
+        context.scene.frame_set(middle)
+
+    async def thumbnail_strip(self, context, strip):
         atc_object_id = getattr(strip, 'atc_object_id', None)
         if not atc_object_id:
             self.report({'ERROR'}, 'Strip %s not set up for Attract' % strip.name)
             self.quit()
             return
 
-        with thumbnail_render_settings(context):
+        with self.thumbnail_render_settings(context):
             bpy.ops.render.render()
         file_id = await self.upload_via_tempdir(bpy.data.images['Render Result'],
                                                 'attract_shot_thumbnail.jpg')
@@ -559,8 +623,6 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
                 }
             })
 
-        self.report({'INFO'}, 'Thumbnail uploaded to Attract')
-        self.quit()
 
     async def upload_via_tempdir(self, datablock, filename_on_cloud) -> pillarsdk.Node:
         """Saves the datablock to file, and uploads it to the cloud.
