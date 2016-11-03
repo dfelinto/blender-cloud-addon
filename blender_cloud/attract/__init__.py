@@ -623,7 +623,6 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
                 }
             })
 
-
     async def upload_via_tempdir(self, datablock, filename_on_cloud) -> pillarsdk.Node:
         """Saves the datablock to file, and uploads it to the cloud.
 
