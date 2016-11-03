@@ -36,17 +36,22 @@
 #     "support": "TESTING"
 # }
 
+import contextlib
 import functools
 import logging
 
 if "bpy" in locals():
     import importlib
 
-    importlib.reload(draw)
+    draw = importlib.reload(draw)
+    pillar = importlib.reload(pillar)
+    async_loop = importlib.reload(async_loop)
 else:
     from . import draw
+    from .. import pillar, async_loop
 
 import bpy
+import pillarsdk
 from pillarsdk.nodes import Node
 from pillarsdk.projects import Project
 from pillarsdk import exceptions as sdk_exceptions
@@ -115,12 +120,14 @@ class ToolsPanel(Panel):
             ro_sub.prop(strip, 'atc_notes', text='Notes')
 
             if strip.atc_is_synced:
-                row = layout.row(align=True)
+                sub = layout.column(align=True)
+                row = sub.row(align=True)
                 row.operator('attract.submit_selected', text='Submit %s' % noun)
                 row.operator(AttractShotFetchUpdate.bl_idname,
                              text='', icon='FILE_REFRESH')
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
                              text='', icon='WORLD')
+                sub.operator(ATTRACT_OT_make_shot_thumbnail.bl_idname)
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
@@ -481,10 +488,129 @@ class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
 
         if scene:
             cmd.extend(['--python-expr',
-                       'import bpy; bpy.context.screen.scene = bpy.data.scenes["%s"]' % scene])
+                        'import bpy; bpy.context.screen.scene = bpy.data.scenes["%s"]' % scene])
             cmd.extend(['--scene', scene])
 
         subprocess.Popen(cmd)
+
+
+@contextlib.contextmanager
+def thumbnail_render_settings(context, thumbnail_width=512):
+    orig_res_x = context.scene.render.resolution_x
+    orig_res_y = context.scene.render.resolution_y
+    orig_percentage = context.scene.render.resolution_percentage
+    orig_file_format = context.scene.render.image_settings.file_format
+    orig_quality = context.scene.render.image_settings.quality
+
+    try:
+        # Update the render size to something thumbnaily.
+        factor = orig_res_y / orig_res_x
+        context.scene.render.resolution_x = thumbnail_width
+        context.scene.render.resolution_y = round(thumbnail_width * factor)
+        context.scene.render.resolution_percentage = 100
+        context.scene.render.image_settings.file_format = 'JPEG'
+        context.scene.render.image_settings.quality = 85
+
+        yield
+    finally:
+        # Return the render settings to normal.
+        context.scene.render.resolution_x = orig_res_x
+        context.scene.render.resolution_y = orig_res_y
+        context.scene.render.resolution_percentage = orig_percentage
+        context.scene.render.image_settings.file_format = orig_file_format
+        context.scene.render.image_settings.quality = orig_quality
+
+
+class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
+                                     async_loop.AsyncModalOperatorMixin,
+                                     Operator):
+    bl_idname = 'attract.make_shot_thumbnail'
+    bl_label = 'Render shot thumbnail'
+    bl_description = 'Renders the current frame, and uploads it as thumbnail for the shot'
+
+    stop_upon_exception = True
+
+    async def async_execute(self, context):
+        import tempfile
+
+        # Later: for strip in context.selected_sequences:
+        strip = active_strip(context)
+        atc_object_id = getattr(strip, 'atc_object_id', None)
+        if not atc_object_id:
+            self.report({'ERROR'}, 'Strip %s not set up for Attract' % strip.name)
+            self.quit()
+            return
+
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            with thumbnail_render_settings(context):
+                bpy.ops.render.render()
+            file_id = await self.upload_via_tempdir(bpy.data.images['Render Result'],
+                                                    'attract_shot_thumbnail.jpg')
+
+        if file_id is None:
+            self.quit()
+            return
+
+        # Update the shot to include this file as the picture.
+        node = pillarsdk.Node({'_id': atc_object_id})
+        await pillar.pillar_call(
+            node.patch,
+            {
+                'op': 'from-blender',
+                '$set': {
+                    'picture': file_id,
+                }
+            })
+
+        self.report({'INFO'}, 'Thumbnail uploaded to Attract')
+        self.quit()
+
+    async def upload_via_tempdir(self, datablock, filename_on_cloud) -> pillarsdk.Node:
+        """Saves the datablock to file, and uploads it to the cloud.
+
+        Saving is done to a temporary directory, which is removed afterwards.
+
+        Returns the node.
+        """
+        import tempfile
+        import os.path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = os.path.join(tmpdir, filename_on_cloud)
+            self.log.debug('Saving %s to %s', datablock, filepath)
+            datablock.save_render(filepath)
+            return await self.upload_file(filepath)
+
+    async def upload_file(self, filename: str, fileobj=None):
+        """Uploads a file to the cloud, attached to the image sharing node.
+
+        Returns the node.
+        """
+        from .. import blender
+
+        prefs = blender.preferences()
+        project = self.find_project(prefs.attract_project.project)
+
+        self.log.info('Uploading file %s', filename)
+        resp = await pillar.pillar_call(
+            pillarsdk.File.upload_to_project,
+            project['_id'],
+            'image/jpeg',
+            filename,
+            fileobj=fileobj)
+
+        self.log.debug('Returned data: %s', resp)
+        try:
+            file_id = resp['file_id']
+        except KeyError:
+            self.log.error('Upload did not succeed, response: %s', resp)
+            self.report({'ERROR'}, 'Unable to upload thumbnail to Attract: %s' % resp)
+            return None
+
+        self.log.info('Created file %s', file_id)
+        self.report({'INFO'}, 'File succesfully uploaded to the cloud!')
+
+        return file_id
 
 
 def draw_strip_movie_meta(self, context):
@@ -537,6 +663,7 @@ def register():
     bpy.utils.register_class(AttractShotSubmitSelected)
     bpy.utils.register_class(ATTRACT_OT_open_meta_blendfile)
     bpy.utils.register_class(ATTRACT_OT_shot_open_in_browser)
+    bpy.utils.register_class(ATTRACT_OT_make_shot_thumbnail)
     draw.callback_enable()
 
 
