@@ -531,8 +531,6 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
     stop_upon_exception = True
 
     async def async_execute(self, context):
-        import tempfile
-
         # Later: for strip in context.selected_sequences:
         strip = active_strip(context)
         atc_object_id = getattr(strip, 'atc_object_id', None)
@@ -541,11 +539,10 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
             self.quit()
             return
 
-        with tempfile.NamedTemporaryFile() as tmpfile:
-            with thumbnail_render_settings(context):
-                bpy.ops.render.render()
-            file_id = await self.upload_via_tempdir(bpy.data.images['Render Result'],
-                                                    'attract_shot_thumbnail.jpg')
+        with thumbnail_render_settings(context):
+            bpy.ops.render.render()
+        file_id = await self.upload_via_tempdir(bpy.data.images['Render Result'],
+                                                'attract_shot_thumbnail.jpg')
 
         if file_id is None:
             self.quit()
