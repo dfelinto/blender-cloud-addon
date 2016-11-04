@@ -130,6 +130,9 @@ def shot_id_use(strips):
 def compute_strip_conflicts(scene):
     """Sets the strip property atc_object_id_conflict for each strip."""
 
+    if not scene or not scene.sequence_editor or not scene.sequence_editor.sequences_all:
+        return
+
     tag_redraw = False
     ids_in_use = shot_id_use(scene.sequence_editor.sequences_all)
     for strips in ids_in_use.values():
