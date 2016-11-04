@@ -106,9 +106,9 @@ class ToolsPanel(Panel):
         selshots = list(selected_shots(context))
         if strip and strip.type in strip_types and strip.atc_object_id:
             if len(selshots) > 1:
-                noun = 'selected shots'
+                noun = 'Selected Shots'
             else:
-                noun = 'this shot'
+                noun = 'This Shot'
 
             layout.prop(strip, 'atc_name', text='Name')
             layout.prop(strip, 'atc_status', text='Status')
@@ -128,7 +128,7 @@ class ToolsPanel(Panel):
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
                              text='', icon='WORLD')
                 sub.operator(ATTRACT_OT_make_shot_thumbnail.bl_idname,
-                             text='Render thumbnail for %s' % noun)
+                             text='Render Thumbnail for %s' % noun)
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
@@ -141,10 +141,10 @@ class ToolsPanel(Panel):
             else:
                 noun = 'this strip'
             layout.operator(AttractShotSubmitSelected.bl_idname,
-                            text='Submit %s as new shot' % noun)
+                            text='Submit %s as New Shot' % noun)
             layout.operator('attract.shot_relink')
         else:
-            layout.label(text='Select a Movie or Image strip')
+            layout.label(text='Select a Movie or Image Strip')
 
 
 class AttractOperatorMixin:
@@ -271,7 +271,7 @@ class AttractOperatorMixin:
 
 class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
     bl_idname = "attract.shot_fetch_update"
-    bl_label = "Fetch update from Attract"
+    bl_label = "Fetch Update From Attract"
     bl_description = 'Update status, description & notes from Attract'
 
     @classmethod
@@ -290,7 +290,7 @@ class AttractShotFetchUpdate(AttractOperatorMixin, Operator):
 
 class AttractShotRelink(AttractShotFetchUpdate):
     bl_idname = "attract.shot_relink"
-    bl_label = "Relink with Attract"
+    bl_label = "Relink With Attract"
 
     strip_atc_object_id = bpy.props.StringProperty()
 
@@ -331,7 +331,7 @@ class AttractShotRelink(AttractShotFetchUpdate):
 
 class ATTRACT_OT_shot_open_in_browser(AttractOperatorMixin, Operator):
     bl_idname = 'attract.shot_open_in_browser'
-    bl_label = 'Open in browser'
+    bl_label = 'Open in Browser'
     bl_description = 'Opens a webbrowser to show the shot on Attract'
 
     def execute(self, context):
@@ -384,7 +384,7 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
 
 class AttractStripUnlink(AttractOperatorMixin, Operator):
     bl_idname = 'attract.strip_unlink'
-    bl_label = 'Unlink shot from this strip'
+    bl_label = 'Unlink Shot From This Strip'
     bl_description = 'Remove Attract props from the selected strip(s)'
 
     def execute(self, context):
@@ -403,7 +403,7 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
 
 class AttractShotSubmitSelected(AttractOperatorMixin, Operator):
     bl_idname = 'attract.submit_selected'
-    bl_label = 'Submit all selected'
+    bl_label = 'Submit All Selected'
     bl_description = 'Submits all selected strips to Attract'
 
     @classmethod
@@ -503,7 +503,7 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
                                      async_loop.AsyncModalOperatorMixin,
                                      Operator):
     bl_idname = 'attract.make_shot_thumbnail'
-    bl_label = 'Render shot thumbnail'
+    bl_label = 'Render Shot Thumbnail'
     bl_description = 'Renders the current frame, and uploads it as thumbnail for the shot'
 
     stop_upon_exception = True
@@ -693,22 +693,22 @@ def draw_strip_movie_meta(self, context):
                      text='', icon='FILE_BLEND')
     sfra = meta.get('START_FRAME', '?')
     efra = meta.get('END_FRAME', '?')
-    box.label('Original frame range: %s-%s' % (sfra, efra))
+    box.label('Original Frame Range: %s-%s' % (sfra, efra))
 
 
 def register():
-    bpy.types.Sequence.atc_is_synced = bpy.props.BoolProperty(name="Is synced")
+    bpy.types.Sequence.atc_is_synced = bpy.props.BoolProperty(name="Is Synced")
     bpy.types.Sequence.atc_object_id = bpy.props.StringProperty(name="Attract Object ID")
     bpy.types.Sequence.atc_name = bpy.props.StringProperty(name="Shot Name")
-    bpy.types.Sequence.atc_description = bpy.props.StringProperty(name="Shot description")
-    bpy.types.Sequence.atc_notes = bpy.props.StringProperty(name="Shot notes")
+    bpy.types.Sequence.atc_description = bpy.props.StringProperty(name="Shot Description")
+    bpy.types.Sequence.atc_notes = bpy.props.StringProperty(name="Shot Notes")
 
     # TODO: get this from the project's node type definition.
     bpy.types.Sequence.atc_status = bpy.props.EnumProperty(
         items=[
-            ('on_hold', 'On hold', 'The shot is on hold'),
+            ('on_hold', 'On Hold', 'The shot is on hold'),
             ('todo', 'Todo', 'Waiting'),
-            ('in_progress', 'In progress', 'The show has been assigned'),
+            ('in_progress', 'In Progress', 'The show has been assigned'),
             ('review', 'Review', ''),
             ('final', 'Final', ''),
         ],
