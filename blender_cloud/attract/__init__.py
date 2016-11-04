@@ -431,7 +431,7 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
     def draw(self, context):
         layout = self.layout
         col = layout.column()
-        col.prop(self, 'confirm', text="I hereby confirm I want to delete this shot.")
+        col.prop(self, 'confirm', text="I hereby confirm I want to delete this shot from The Edit.")
 
 
 class AttractStripUnlink(AttractOperatorMixin, Operator):
