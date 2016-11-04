@@ -16,7 +16,7 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-# <pep8-80 compliant>
+# <pep8 compliant>
 
 import bpy
 import logging
@@ -87,17 +87,9 @@ def draw_strip_conflict(strip_coords, pixel_size_x):
 
     # Always draw the full rectangle, the conflict should be resolved and thus stand out.
     bgl.glColor3f(*CONFLICT_COLOUR)
-    bgl.glLineWidth(3)
-    bgl.glPointSize(10)
+    bgl.glLineWidth(2)
 
     bgl.glBegin(bgl.GL_LINE_LOOP)
-    bgl.glVertex2f(s_x1, s_y1)
-    bgl.glVertex2f(s_x2, s_y1)
-    bgl.glVertex2f(s_x2, s_y2)
-    bgl.glVertex2f(s_x1, s_y2)
-    bgl.glEnd()
-
-    bgl.glBegin(bgl.GL_POINTS)
     bgl.glVertex2f(s_x1, s_y1)
     bgl.glVertex2f(s_x2, s_y1)
     bgl.glVertex2f(s_x2, s_y2)
