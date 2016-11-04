@@ -79,6 +79,17 @@ def selected_shots(context):
         yield strip
 
 
+def all_shots(context):
+    """Generator, yields all strips if they are Attract shots."""
+
+    for strip in context.scene.sequence_editor.sequences_all:
+        atc_object_id = getattr(strip, 'atc_object_id')
+        if not atc_object_id:
+            continue
+
+        yield strip
+
+
 def shown_strips(context):
     """Returns the strips from the current meta-strip-stack, or top-level strips.
 
@@ -119,11 +130,7 @@ def shot_id_use(strips):
 def compute_strip_conflicts(context):
     """Sets the strip property atc_object_id_conflict for each strip."""
 
-    # FIXME: this only considers the currently shown strips, so only draws conflicts either within
-    # the same metastrip or not in metastrips. Cross-metastrip boundaries are not crossed to check.
-    all_strips = shown_strips(context)
-    ids_in_use = shot_id_use(all_strips)
-
+    ids_in_use = shot_id_use(context.scene.sequence_editor.sequences_all)
     for strips in ids_in_use.values():
         is_conflict = len(strips) > 1
         for strip in strips:
@@ -172,7 +179,10 @@ class ToolsPanel(Panel):
             if strip.atc_is_synced:
                 sub = layout.column(align=True)
                 row = sub.row(align=True)
-                row.operator('attract.submit_selected', text='Submit %s' % noun)
+                if bpy.ops.attract.submit_selected.poll():
+                    row.operator('attract.submit_selected', text='Submit %s' % noun)
+                else:
+                    row.operator(ATTRACT_OT_submit_all.bl_idname)
                 row.operator(AttractShotFetchUpdate.bl_idname,
                              text='', icon='FILE_REFRESH')
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
@@ -194,7 +204,7 @@ class ToolsPanel(Panel):
                             text='Submit %s as New Shot' % noun)
             layout.operator('attract.shot_relink')
         else:
-            layout.label(text='Select a Movie or Image Strip')
+            layout.operator(ATTRACT_OT_submit_all.bl_idname)
 
 
 class AttractOperatorMixin:
@@ -287,6 +297,7 @@ class AttractOperatorMixin:
                 'properties.duration_in_edit_in_frames': strip.frame_final_duration,
                 'properties.cut_in_timeline_in_frames': strip.frame_final_start,
                 'properties.status': strip.atc_status,
+                'properties.used_in_edit': True,
             }
         }
 
@@ -478,9 +489,9 @@ class AttractShotSubmitSelected(AttractOperatorMixin, Operator):
 
     def execute(self, context):
         # Check that the project is set up for Attract.
-        node_type = self.find_node_type('attract_shot')
-        if isinstance(node_type, set):
-            return node_type
+        maybe_error = self.find_node_type('attract_shot')
+        if isinstance(maybe_error, set):
+            return maybe_error
 
         for strip in context.selected_sequences:
             status = self.submit(strip)
@@ -500,6 +511,27 @@ class AttractShotSubmitSelected(AttractOperatorMixin, Operator):
 
         # Or just save to Attract.
         return self.submit_update(strip)
+
+
+class ATTRACT_OT_submit_all(AttractOperatorMixin, Operator):
+    bl_idname = 'attract.submit_all'
+    bl_label = 'Submit All Shots to Attract'
+    bl_description = 'Updates Attract with the current state of the edit'
+
+    def execute(self, context):
+        # Check that the project is set up for Attract.
+        maybe_error = self.find_node_type('attract_shot')
+        if isinstance(maybe_error, set):
+            return maybe_error
+
+        for strip in all_shots(context):
+            status = self.submit_update(strip)
+            if isinstance(status, set):
+                return status
+
+        self.report({'INFO'}, 'All strips re-sent to Attract.')
+
+        return {'FINISHED'}
 
 
 class ATTRACT_OT_open_meta_blendfile(AttractOperatorMixin, Operator):
@@ -793,6 +825,7 @@ def register():
     bpy.utils.register_class(AttractStripUnlink)
     bpy.utils.register_class(AttractShotFetchUpdate)
     bpy.utils.register_class(AttractShotSubmitSelected)
+    bpy.utils.register_class(ATTRACT_OT_submit_all)
     bpy.utils.register_class(ATTRACT_OT_open_meta_blendfile)
     bpy.utils.register_class(ATTRACT_OT_shot_open_in_browser)
     bpy.utils.register_class(ATTRACT_OT_make_shot_thumbnail)
