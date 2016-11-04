@@ -474,7 +474,7 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
         # For all Object IDs that are no longer in use in the edit, let Attract know.
         # This should be done with care, as the shot could have been attached to multiple
         # strips.
-        id_to_shots = compute_strip_conflicts(context)
+        id_to_shots = compute_strip_conflicts(context.scene)
         for oid in unlinked_ids:
             if len(id_to_shots[oid]):
                 # Still in use
