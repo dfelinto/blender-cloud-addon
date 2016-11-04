@@ -108,29 +108,20 @@ def draw_strip_conflict(strip_coords, pixel_size_x):
 
 
 def draw_callback_px():
-    import collections
-
     context = bpy.context
 
     if not context.scene.sequence_editor:
         return
+
+    from . import shown_strips
 
     region = context.region
     xwin1, ywin1 = region.view2d.region_to_view(0, 0)
     xwin2, ywin2 = region.view2d.region_to_view(region.width, region.height)
     one_pixel_further_x, one_pixel_further_y = region.view2d.region_to_view(1, 1)
     pixel_size_x = one_pixel_further_x - xwin1
-    pixel_size_y = one_pixel_further_y - ywin1
 
-    if context.scene.sequence_editor.meta_stack:
-        strips = context.scene.sequence_editor.meta_stack[-1].sequences
-    else:
-        strips = context.scene.sequence_editor.sequences
-
-    # Count the number of uses per Object ID, so that we can highlight double use.
-    ids_in_use = collections.defaultdict(int)
-    for strip in strips:
-        ids_in_use[strip.atc_object_id] += bool(getattr(strip, 'atc_is_synced', False))
+    strips = shown_strips(context)
 
     for strip in strips:
         if not strip.atc_object_id:
@@ -154,7 +145,7 @@ def draw_callback_px():
         alpha = 1.0 if strip.atc_is_synced else 0.5
 
         draw_underline_in_strip(strip_coords, pixel_size_x, color + (alpha,))
-        if strip.atc_is_synced and ids_in_use[strip.atc_object_id] > 1:
+        if strip.atc_is_synced and strip.atc_object_id_conflict:
             draw_strip_conflict(strip_coords, pixel_size_x)
 
 

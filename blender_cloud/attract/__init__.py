@@ -79,6 +79,18 @@ def selected_shots(context):
         yield strip
 
 
+def shown_strips(context):
+    """Returns the strips from the current meta-strip-stack, or top-level strips.
+
+    What is returned depends on what the user is currently editing.
+    """
+
+    if context.scene.sequence_editor.meta_stack:
+        return context.scene.sequence_editor.meta_stack[-1].sequences
+
+    return context.scene.sequence_editor.sequences
+
+
 def remove_atc_props(strip):
     """Resets the attract custom properties assigned to a VSE strip"""
 
@@ -86,6 +98,38 @@ def remove_atc_props(strip):
     strip.atc_description = ""
     strip.atc_object_id = ""
     strip.atc_is_synced = False
+
+
+def shot_id_use(strips):
+    """Returns a mapping from shot Object ID to a list of strips that use it."""
+
+    import collections
+
+    # Count the number of uses per Object ID, so that we can highlight double use.
+    ids_in_use = collections.defaultdict(list)
+    for strip in strips:
+        if not getattr(strip, 'atc_is_synced', False):
+            continue
+
+        ids_in_use[strip.atc_object_id].append(strip)
+
+    return ids_in_use
+
+
+def compute_strip_conflicts(context):
+    """Sets the strip property atc_object_id_conflict for each strip."""
+
+    # FIXME: this only considers the currently shown strips, so only draws conflicts either within
+    # the same metastrip or not in metastrips. Cross-metastrip boundaries are not crossed to check.
+    all_strips = shown_strips(context)
+    ids_in_use = shot_id_use(all_strips)
+
+    for strips in ids_in_use.values():
+        is_conflict = len(strips) > 1
+        for strip in strips:
+            strip.atc_object_id_conflict = is_conflict
+
+    return ids_in_use
 
 
 class ToolsPanel(Panel):
@@ -109,6 +153,12 @@ class ToolsPanel(Panel):
                 noun = 'Selected Shots'
             else:
                 noun = 'This Shot'
+
+            if strip.atc_object_id_conflict:
+                warnbox = layout.box()
+                warnbox.alert = True
+                warnbox.label('Warning: This shot is linked to multiple sequencer strips.',
+                              icon='ERROR')
 
             layout.prop(strip, 'atc_name', text='Name')
             layout.prop(strip, 'atc_status', text='Status')
@@ -222,6 +272,7 @@ class AttractOperatorMixin:
         strip.atc_notes = node['properties']['notes']
         strip.atc_status = node['properties']['status']
 
+        compute_strip_conflicts(bpy.context)
         draw.tag_redraw_all_sequencer_editors()
 
     def submit_update(self, strip):
@@ -266,6 +317,7 @@ class AttractOperatorMixin:
         strip.atc_notes = node.properties.notes or ''
         strip.atc_description = node.description or ''
 
+        compute_strip_conflicts(bpy.context)
         draw.tag_redraw_all_sequencer_editors()
 
 
@@ -699,6 +751,10 @@ def draw_strip_movie_meta(self, context):
 def register():
     bpy.types.Sequence.atc_is_synced = bpy.props.BoolProperty(name="Is Synced")
     bpy.types.Sequence.atc_object_id = bpy.props.StringProperty(name="Attract Object ID")
+    bpy.types.Sequence.atc_object_id_conflict = bpy.props.BoolProperty(
+        name='Object ID Conflict',
+        description='Attract Object ID used multiple times',
+        default=False)
     bpy.types.Sequence.atc_name = bpy.props.StringProperty(name="Shot Name")
     bpy.types.Sequence.atc_description = bpy.props.StringProperty(name="Shot Description")
     bpy.types.Sequence.atc_notes = bpy.props.StringProperty(name="Shot Notes")
@@ -734,6 +790,7 @@ def unregister():
     bpy.utils.unregister_module(__name__)
     del bpy.types.Sequence.atc_is_synced
     del bpy.types.Sequence.atc_object_id
+    del bpy.types.Sequence.atc_object_id_conflict
     del bpy.types.Sequence.atc_name
     del bpy.types.Sequence.atc_description
     del bpy.types.Sequence.atc_notes
