@@ -644,9 +644,13 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
 
     @contextlib.contextmanager
     def temporary_current_frame(self, context):
+        """Allows the context to set the scene current frame, restores it on exit.
+
+        Yields the initial current frame, so it can be used for reference in the context.
+        """
         current_frame = context.scene.frame_current
         try:
-            yield
+            yield current_frame
         finally:
             context.scene.frame_current = current_frame
 
@@ -654,19 +658,25 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
         nr_of_strips = len(context.selected_sequences)
         do_multishot = nr_of_strips > 1
 
-        with self.temporary_current_frame(context):
+        with self.temporary_current_frame(context) as original_curframe:
+            # The multishot and singleshot branches do pretty much the same thing,
+            # but report differently to the user.
             if do_multishot:
                 context.window_manager.progress_begin(0, nr_of_strips)
                 try:
                     self.report({'INFO'}, 'Rendering thumbnails for %i selected shots.' %
                                 nr_of_strips)
 
-                    for idx, strip in enumerate(context.selected_sequences):
+                    strips = sorted(context.selected_sequences, key=self.by_frame)
+                    for idx, strip in enumerate(strips):
                         context.window_manager.progress_update(idx)
-                        # For multi-shot we can't just use the current frame (each thumb would be
-                        # identical), so instead we use the middle frame. The first/last frames
-                        # cannot be reliably used due to transitions with other shots.
-                        self.set_middle_frame(context, strip)
+
+                        # Pick the middle frame, except for the strip the original current frame
+                        # marker was over.
+                        if not self.strip_contains(strip, original_curframe):
+                            self.set_middle_frame(context, strip)
+                        else:
+                            context.scene.frame_set(original_curframe)
                         await self.thumbnail_strip(context, strip)
 
                         if self._state == 'QUIT':
@@ -677,7 +687,7 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
 
             else:
                 strip = active_strip(context)
-                if not strip.frame_final_start <= context.scene.frame_current <= strip.frame_final_end:
+                if not self.strip_contains(strip, original_curframe):
                     self.report({'WARNING'}, 'Rendering middle frame as thumbnail for active shot.')
                     self.set_middle_frame(context, strip)
                 else:
@@ -697,11 +707,26 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
         self.report({'INFO'}, 'Thumbnail uploaded to Attract')
         self.quit()
 
-    def set_middle_frame(self, context, strip):
+    @staticmethod
+    def strip_contains(strip, framenr: int) -> bool:
+        """Returns True iff the strip covers the given frame number"""
+        return strip.frame_final_start <= framenr <= strip.frame_final_end
+
+    @staticmethod
+    def set_middle_frame(context, strip):
         """Sets the current frame to the middle frame of the strip."""
 
         middle = round((strip.frame_final_start + strip.frame_final_end) / 2)
         context.scene.frame_set(middle)
+
+    @staticmethod
+    def by_frame(sequence_strip) -> int:
+        """Returns the start frame number of the sequence strip.
+
+        This can be used for sorting strips by time.
+        """
+
+        return sequence_strip.frame_final_start
 
     async def thumbnail_strip(self, context, strip):
         atc_object_id = getattr(strip, 'atc_object_id', None)
