@@ -308,6 +308,11 @@ class AttractOperatorMixin:
     def relink(self, strip, atc_object_id, *, refresh=False):
         from .. import pillar
 
+        # The node may have been deleted, so we need to send a 'relink' before we try
+        # to fetch the node itself.
+        node = Node({'_id': atc_object_id})
+        pillar.sync_call(node.patch, {'op': 'relink'})
+
         try:
             node = pillar.sync_call(Node.find, atc_object_id, caching=False)
         except (sdk_exceptions.ResourceNotFound, sdk_exceptions.MethodNotAllowed):
@@ -317,7 +322,6 @@ class AttractOperatorMixin:
             strip.atc_is_synced = False
             return {'CANCELLED'}
 
-        pillar.sync_call(node.patch, {'op': 'relink'})
         strip.atc_is_synced = True
         if not refresh:
             strip.atc_name = node.name
@@ -433,6 +437,7 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
             return {'CANCELLED'}
 
         remove_atc_props(strip)
+        compute_strip_conflicts(context)
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
 
