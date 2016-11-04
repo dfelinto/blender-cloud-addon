@@ -447,12 +447,13 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
         return {'FINISHED'}
 
     def invoke(self, context, event):
+        self.confirm = False
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
         layout = self.layout
         col = layout.column()
-        col.prop(self, 'confirm', text="I hereby confirm I want to delete this shot from The Edit.")
+        col.prop(self, 'confirm', text="I hereby confirm: delete this shot from The Edit.")
 
 
 class AttractStripUnlink(AttractOperatorMixin, Operator):
