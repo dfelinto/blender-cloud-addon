@@ -34,19 +34,22 @@ strip_status_colour = {
     'todo': (1.0, 0.5019607843137255, 0.5019607843137255)
 }
 
+CONFLICT_COLOUR = (0.576, 0.118, 0.035)  # RGB tuple
 
-def get_strip_rectf(strip, pixel_size_y):
+
+def get_strip_rectf(strip):
     # Get x and y in terms of the grid's frames and channels
     x1 = strip.frame_final_start
     x2 = strip.frame_final_end
-    y1 = strip.channel + 0.2 - pixel_size_y
-    y2 = y1 + 2 * pixel_size_y
+    y1 = strip.channel + 0.2
+    y2 = strip.channel - 0.2 + 1
 
-    return (x1, y1, x2, y2)
+    return x1, y1, x2, y2
 
 
-def draw_underline_in_strip(strip_coords, pixel_size, color):
+def draw_underline_in_strip(strip_coords, pixel_size_x, color):
     from bgl import glColor4f, glRectf, glEnable, glDisable, GL_BLEND
+    import bgl
 
     context = bpy.context
 
@@ -56,21 +59,57 @@ def draw_underline_in_strip(strip_coords, pixel_size, color):
     # be careful not to draw over the current frame line
     cf_x = context.scene.frame_current_final
 
+    bgl.glPushAttrib(bgl.GL_COLOR_BUFFER_BIT | bgl.GL_LINE_BIT)
+
     glColor4f(*color)
     glEnable(GL_BLEND)
+    bgl.glLineWidth(2)
+    bgl.glBegin(bgl.GL_LINES)
 
+    bgl.glVertex2f(s_x1, s_y1)
     if s_x1 < cf_x < s_x2:
         # Bad luck, the line passes our strip
-        glRectf(s_x1, s_y1, cf_x - pixel_size, s_y2)
-        glRectf(cf_x + pixel_size, s_y1, s_x2, s_y2)
-    else:
-        # Normal, full rectangle draw
-        glRectf(s_x1, s_y1, s_x2, s_y2)
+        bgl.glVertex2f(cf_x - pixel_size_x, s_y1)
+        bgl.glVertex2f(cf_x + pixel_size_x, s_y1)
+    bgl.glVertex2f(s_x2, s_y1)
 
-    glDisable(GL_BLEND)
+    bgl.glEnd()
+    bgl.glPopAttrib()
+
+
+def draw_strip_conflict(strip_coords, pixel_size_x):
+    """Draws conflicting states between strips."""
+
+    import bgl
+
+    s_x1, s_y1, s_x2, s_y2 = strip_coords
+    bgl.glPushAttrib(bgl.GL_COLOR_BUFFER_BIT | bgl.GL_LINE_BIT)
+
+    # Always draw the full rectangle, the conflict should be resolved and thus stand out.
+    bgl.glColor3f(*CONFLICT_COLOUR)
+    bgl.glLineWidth(3)
+    bgl.glPointSize(10)
+
+    bgl.glBegin(bgl.GL_LINE_LOOP)
+    bgl.glVertex2f(s_x1, s_y1)
+    bgl.glVertex2f(s_x2, s_y1)
+    bgl.glVertex2f(s_x2, s_y2)
+    bgl.glVertex2f(s_x1, s_y2)
+    bgl.glEnd()
+
+    bgl.glBegin(bgl.GL_POINTS)
+    bgl.glVertex2f(s_x1, s_y1)
+    bgl.glVertex2f(s_x2, s_y1)
+    bgl.glVertex2f(s_x2, s_y2)
+    bgl.glVertex2f(s_x1, s_y2)
+    bgl.glEnd()
+
+    bgl.glPopAttrib()
 
 
 def draw_callback_px():
+    import collections
+
     context = bpy.context
 
     if not context.scene.sequence_editor:
@@ -88,12 +127,17 @@ def draw_callback_px():
     else:
         strips = context.scene.sequence_editor.sequences
 
+    # Count the number of uses per Object ID, so that we can highlight double use.
+    ids_in_use = collections.defaultdict(int)
+    for strip in strips:
+        ids_in_use[strip.atc_object_id] += bool(getattr(strip, 'atc_is_synced', False))
+
     for strip in strips:
         if not strip.atc_object_id:
             continue
 
         # Get corners (x1, y1), (x2, y2) of the strip rectangle in px region coords
-        strip_coords = get_strip_rectf(strip, pixel_size_y)
+        strip_coords = get_strip_rectf(strip)
 
         # check if any of the coordinates are out of bounds
         if strip_coords[0] > xwin2 or strip_coords[2] < xwin1 or strip_coords[1] > ywin2 or \
@@ -109,7 +153,9 @@ def draw_callback_px():
 
         alpha = 1.0 if strip.atc_is_synced else 0.5
 
-        draw_underline_in_strip(strip_coords, pixel_size_x, color + (alpha, ))
+        draw_underline_in_strip(strip_coords, pixel_size_x, color + (alpha,))
+        if strip.atc_is_synced and ids_in_use[strip.atc_object_id] > 1:
+            draw_strip_conflict(strip_coords, pixel_size_x)
 
 
 def tag_redraw_all_sequencer_editors():
