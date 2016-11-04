@@ -127,16 +127,25 @@ def shot_id_use(strips):
     return ids_in_use
 
 
-def compute_strip_conflicts(context):
+def compute_strip_conflicts(scene):
     """Sets the strip property atc_object_id_conflict for each strip."""
 
-    ids_in_use = shot_id_use(context.scene.sequence_editor.sequences_all)
+    tag_redraw = False
+    ids_in_use = shot_id_use(scene.sequence_editor.sequences_all)
     for strips in ids_in_use.values():
         is_conflict = len(strips) > 1
         for strip in strips:
+            if strip.atc_object_id_conflict != is_conflict:
+                tag_redraw = True
             strip.atc_object_id_conflict = is_conflict
 
+    if tag_redraw:
+        draw.tag_redraw_all_sequencer_editors()
     return ids_in_use
+
+
+def scene_update_post_handler(scene):
+    compute_strip_conflicts(scene)
 
 
 class ToolsPanel(Panel):
@@ -282,7 +291,6 @@ class AttractOperatorMixin:
         strip.atc_notes = node['properties']['notes']
         strip.atc_status = node['properties']['status']
 
-        compute_strip_conflicts(bpy.context)
         draw.tag_redraw_all_sequencer_editors()
 
     def submit_update(self, strip):
@@ -331,8 +339,6 @@ class AttractOperatorMixin:
         strip.atc_status = node.properties.status
         strip.atc_notes = node.properties.notes or ''
         strip.atc_description = node.description or ''
-
-        compute_strip_conflicts(bpy.context)
         draw.tag_redraw_all_sequencer_editors()
 
 
@@ -437,7 +443,6 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
             return {'CANCELLED'}
 
         remove_atc_props(strip)
-        compute_strip_conflicts(context)
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
 
@@ -859,11 +864,14 @@ def register():
     bpy.utils.register_class(ATTRACT_OT_open_meta_blendfile)
     bpy.utils.register_class(ATTRACT_OT_shot_open_in_browser)
     bpy.utils.register_class(ATTRACT_OT_make_shot_thumbnail)
+
+    bpy.app.handlers.scene_update_post.append(scene_update_post_handler)
     draw.callback_enable()
 
 
 def unregister():
     draw.callback_disable()
+    bpy.app.handlers.scene_update_post.remove(scene_update_post_handler)
     bpy.utils.unregister_module(__name__)
     del bpy.types.Sequence.atc_is_synced
     del bpy.types.Sequence.atc_object_id
