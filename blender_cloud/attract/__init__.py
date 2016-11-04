@@ -440,14 +440,28 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
     bl_description = 'Remove Attract props from the selected strip(s)'
 
     def execute(self, context):
+        unlinked_ids = set()
+
+        # First remove the Attract properties from the strips.
         for strip in context.selected_sequences:
             atc_object_id = getattr(strip, 'atc_object_id')
             remove_atc_props(strip)
 
             if atc_object_id:
-                node = Node({'_id': atc_object_id})
-                pillar.sync_call(node.patch, {'op': 'unlink'})
-                self.report({'INFO'}, 'Shot %s has been unlinked from Attract.' % atc_object_id)
+                unlinked_ids.add(atc_object_id)
+
+        # For all Object IDs that are no longer in use in the edit, let Attract know.
+        # This should be done with care, as the shot could have been attached to multiple
+        # strips.
+        id_to_shots = compute_strip_conflicts(context)
+        for oid in unlinked_ids:
+            if len(id_to_shots[oid]):
+                # Still in use
+                continue
+
+            node = Node({'_id': oid})
+            pillar.sync_call(node.patch, {'op': 'unlink'})
+            self.report({'INFO'}, 'Shot %s has been marked as Unused.' % oid)
 
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
