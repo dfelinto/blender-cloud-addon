@@ -26,7 +26,7 @@ bl_info = {
     'location': 'Addon Preferences panel, and Ctrl+Shift+Alt+A anywhere for texture browser',
     'description': 'Texture library browser and Blender Sync. Requires the Blender ID addon '
                    'and Blender 2.77a or newer.',
-    'wiki_url': 'http://wiki.blender.org/index.php/Extensions:2.6/Py/'
+    'wiki_url': 'https://wiki.blender.org/index.php/Extensions:2.6/Py/'
                 'Scripts/System/BlenderCloud',
     'category': 'System',
     'warning': 'This is a beta version; the first to support Attract.'
