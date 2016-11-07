@@ -209,9 +209,9 @@ class ToolsPanel(Panel):
 
         elif context.selected_sequences:
             if len(context.selected_sequences) > 1:
-                noun = 'selected strips'
+                noun = 'Selected Strips'
             else:
-                noun = 'this strip'
+                noun = 'This Strip'
             layout.operator(AttractShotSubmitSelected.bl_idname,
                             text='Submit %s as New Shot' % noun)
             layout.operator('attract.shot_relink')
