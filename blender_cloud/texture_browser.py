@@ -553,6 +553,7 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
         """Draws the GUI with OpenGL."""
 
         drawers = {
+            'INITIALIZING': self._draw_initializing,
             'CHECKING_CREDENTIALS': self._draw_checking_credentials,
             'BROWSING': self._draw_browser,
             'DOWNLOADING_TEXTURE': self._draw_downloading,
@@ -651,6 +652,13 @@ class BlenderCloudBrowser(pillar.PillarOperatorMixin,
 
         self._draw_text_on_colour(context,
                                   'Checking login credentials',
+                                  (0.0, 0.0, 0.2, 0.6))
+
+    def _draw_initializing(self, context):
+        """OpenGL drawing code for the INITIALIZING state."""
+
+        self._draw_text_on_colour(context,
+                                  'Initializing',
                                   (0.0, 0.0, 0.2, 0.6))
 
     def _draw_text_on_colour(self, context, text, bgcolour):
