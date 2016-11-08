@@ -147,6 +147,7 @@ def compute_strip_conflicts(scene):
     return ids_in_use
 
 
+@bpy.app.handlers.persistent
 def scene_update_post_handler(scene):
     compute_strip_conflicts(scene)
 
