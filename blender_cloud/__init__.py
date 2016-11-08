@@ -29,7 +29,6 @@ bl_info = {
     'wiki_url': 'https://wiki.blender.org/index.php/Extensions:2.6/Py/'
                 'Scripts/System/BlenderCloud',
     'category': 'System',
-    'warning': 'This is a beta version; the first to support Attract.'
 }
 
 import logging
