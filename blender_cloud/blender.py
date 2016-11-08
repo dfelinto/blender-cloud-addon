@@ -285,12 +285,10 @@ class BlenderCloudPreferences(AddonPreferences):
         # Image Share stuff
         share_box = layout.box()
         share_box.label('Image Sharing on Blender Cloud', icon_value=icon('CLOUD'))
-        share_box.enabled = msg_icon != 'ERROR'
         share_box.prop(self, 'open_browser_after_share')
 
         # Attract stuff
         attract_box = layout.box()
-        attract_box.enabled = msg_icon != 'ERROR'
         self.draw_attract_buttons(attract_box, self.attract_project)
 
     def draw_subscribe_button(self, layout):
