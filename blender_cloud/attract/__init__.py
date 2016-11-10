@@ -272,6 +272,7 @@ class AttractOperatorMixin:
                                'notes': '',
                                'used_in_edit': True,
                                'trim_start_in_frames': strip.frame_offset_start,
+                               'trim_end_in_frames': strip.frame_offset_end,
                                'duration_in_edit_in_frames': strip.frame_final_duration,
                                'cut_in_timeline_in_frames': strip.frame_final_start},
                 'order': 0,
@@ -306,6 +307,7 @@ class AttractOperatorMixin:
             '$set': {
                 'name': strip.atc_name,
                 'properties.trim_start_in_frames': strip.frame_offset_start,
+                'properties.trim_end_in_frames': strip.frame_offset_end,
                 'properties.duration_in_edit_in_frames': strip.frame_final_duration,
                 'properties.cut_in_timeline_in_frames': strip.frame_final_start,
                 'properties.status': strip.atc_status,
