@@ -209,12 +209,12 @@ class ToolsPanel(Panel):
                              icon='RENDER_STILL')
 
                 # Group more dangerous operations.
-                dangerous_sub = layout.column(align=True)
+                dangerous_sub = layout.split(0.6, align=True)
+                dangerous_sub.operator('attract.strip_unlink',
+                                       icon='PANEL_CLOSE')
                 dangerous_sub.operator(AttractShotDelete.bl_idname,
                                        text='Delete %s' % noun,
                                        icon='CANCEL')
-                dangerous_sub.operator('attract.strip_unlink',
-                                       icon='PANEL_CLOSE')
 
         elif context.selected_sequences:
             if len(context.selected_sequences) > 1:
