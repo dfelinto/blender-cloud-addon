@@ -170,7 +170,7 @@ class ToolsPanel(Panel):
         selshots = list(selected_shots(context))
         if strip and strip.type in strip_types and strip.atc_object_id:
             if len(selshots) > 1:
-                noun = 'Selected Shots'
+                noun = '%i Shots' % len(selshots)
             else:
                 noun = 'This Shot'
 
@@ -211,6 +211,7 @@ class ToolsPanel(Panel):
                 # Group more dangerous operations.
                 dangerous_sub = layout.split(0.6, align=True)
                 dangerous_sub.operator('attract.strip_unlink',
+                                       text='Unlink %s' % noun,
                                        icon='PANEL_CLOSE')
                 dangerous_sub.operator(AttractShotDelete.bl_idname,
                                        text='Delete %s' % noun,
