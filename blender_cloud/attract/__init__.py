@@ -205,7 +205,8 @@ class ToolsPanel(Panel):
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
-                dangerous_sub.operator(AttractShotDelete.bl_idname)
+                dangerous_sub.operator(AttractShotDelete.bl_idname,
+                                       text='Delete %s' % noun)
                 dangerous_sub.operator('attract.strip_unlink')
 
         elif context.selected_sequences:
@@ -442,13 +443,22 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
             self.report({'WARNING'}, 'Delete aborted.')
             return {'CANCELLED'}
 
-        strip = active_strip(context)
-        node = pillar.sync_call(Node.find, strip.atc_object_id)
-        if not pillar.sync_call(node.delete):
-            print('Unable to delete the strip node on Attract.')
-            return {'CANCELLED'}
+        removed = kept = 0
+        for strip in selected_shots(context):
+            node = pillar.sync_call(Node.find, strip.atc_object_id)
+            if not pillar.sync_call(node.delete):
+                self.report({'ERROR'}, 'Unable to delete shot %s on Attract.' % strip.atc_name)
+                kept += 1
+                continue
+            remove_atc_props(strip)
+            removed += 1
 
-        remove_atc_props(strip)
+        if kept:
+            self.report({'ERROR'}, 'Removed %i shots, but was unable to remove %i' %
+                        (removed, kept))
+        else:
+            self.report({'INFO'}, 'Removed all %i shots from Attract' % removed)
+
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
 
@@ -459,7 +469,14 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
     def draw(self, context):
         layout = self.layout
         col = layout.column()
-        col.prop(self, 'confirm', text="I hereby confirm: delete this shot from The Edit.")
+
+        selshots = list(selected_shots(context))
+        if len(selshots) > 1:
+            noun = '%i shots' % len(selshots)
+        else:
+            noun = 'this shot'
+
+        col.prop(self, 'confirm', text="I hereby confirm: delete %s from The Edit." % noun)
 
 
 class AttractStripUnlink(AttractOperatorMixin, Operator):
