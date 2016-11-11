@@ -193,7 +193,9 @@ class ToolsPanel(Panel):
                 sub = layout.column(align=True)
                 row = sub.row(align=True)
                 if bpy.ops.attract.submit_selected.poll():
-                    row.operator('attract.submit_selected', text='Submit %s' % noun)
+                    row.operator('attract.submit_selected',
+                                 text='Submit %s' % noun,
+                                 icon='MOVE_UP_VEC')
                 else:
                     row.operator(ATTRACT_OT_submit_all.bl_idname)
                 row.operator(AttractShotFetchUpdate.bl_idname,
@@ -201,13 +203,16 @@ class ToolsPanel(Panel):
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
                              text='', icon='WORLD')
                 sub.operator(ATTRACT_OT_make_shot_thumbnail.bl_idname,
-                             text='Render Thumbnail for %s' % noun)
+                             text='Render Thumbnail for %s' % noun,
+                             icon='RENDER_STILL')
 
                 # Group more dangerous operations.
                 dangerous_sub = layout.column(align=True)
                 dangerous_sub.operator(AttractShotDelete.bl_idname,
-                                       text='Delete %s' % noun)
-                dangerous_sub.operator('attract.strip_unlink')
+                                       text='Delete %s' % noun,
+                                       icon='CANCEL')
+                dangerous_sub.operator('attract.strip_unlink',
+                                       icon='PANEL_CLOSE')
 
         elif context.selected_sequences:
             if len(context.selected_sequences) > 1:
