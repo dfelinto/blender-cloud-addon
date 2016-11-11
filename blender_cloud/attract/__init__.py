@@ -514,7 +514,13 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
 
             node = Node({'_id': oid})
             pillar.sync_call(node.patch, {'op': 'unlink'})
-            self.report({'INFO'}, 'Shot %s has been marked as Unused.' % oid)
+
+        if len(unlinked_ids) == 1:
+            shot_id = unlinked_ids.pop()
+            context.window_manager.clipboard = shot_id
+            self.report({'INFO'}, 'Copied unlinked shot ID %s to clipboard' % shot_id)
+        else:
+            self.report({'INFO'}, '%i shots have been marked as Unused.' % len(unlinked_ids))
 
         draw.tag_redraw_all_sequencer_editors()
         return {'FINISHED'}
