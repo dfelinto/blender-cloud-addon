@@ -422,6 +422,10 @@ class ATTRACT_OT_shot_open_in_browser(AttractOperatorMixin, Operator):
     bl_label = 'Open in Browser'
     bl_description = 'Opens a webbrowser to show the shot on Attract'
 
+    @classmethod
+    def poll(cls, context):
+        return bool(context.selected_sequences and active_strip(context))
+
     def execute(self, context):
         from ..blender import PILLAR_WEB_SERVER_URL
         import webbrowser
@@ -443,6 +447,10 @@ class AttractShotDelete(AttractOperatorMixin, Operator):
     bl_description = 'Remove this shot from Attract'
 
     confirm = bpy.props.BoolProperty(name='confirm')
+
+    @classmethod
+    def poll(cls, context):
+        return bool(context.selected_sequences)
 
     def execute(self, context):
         from .. import pillar
@@ -491,6 +499,10 @@ class AttractStripUnlink(AttractOperatorMixin, Operator):
     bl_idname = 'attract.strip_unlink'
     bl_label = 'Unlink Shot From This Strip'
     bl_description = 'Remove Attract props from the selected strip(s)'
+
+    @classmethod
+    def poll(cls, context):
+        return bool(context.selected_sequences)
 
     def execute(self, context):
         unlinked_ids = set()
@@ -852,7 +864,7 @@ class ATTRACT_OT_copy_id_to_clipboard(AttractOperatorMixin, Operator):
 
     @classmethod
     def poll(cls, context):
-        return bool(active_strip(context))
+        return bool(context.selected_sequences and active_strip(context))
 
     def execute(self, context):
         strip = active_strip(context)
