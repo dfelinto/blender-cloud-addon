@@ -202,6 +202,8 @@ class ToolsPanel(Panel):
                              text='', icon='FILE_REFRESH')
                 row.operator(ATTRACT_OT_shot_open_in_browser.bl_idname,
                              text='', icon='WORLD')
+                row.operator(ATTRACT_OT_copy_id_to_clipboard.bl_idname,
+                             text='', icon='COPYDOWN')
                 sub.operator(ATTRACT_OT_make_shot_thumbnail.bl_idname,
                              text='Render Thumbnail for %s' % noun,
                              icon='RENDER_STILL')
@@ -837,6 +839,23 @@ class ATTRACT_OT_make_shot_thumbnail(AttractOperatorMixin,
         return file_id
 
 
+class ATTRACT_OT_copy_id_to_clipboard(AttractOperatorMixin, Operator):
+    bl_idname = 'attract.copy_id_to_clipboard'
+    bl_label = 'Copy shot ID to clipboard'
+
+    @classmethod
+    def poll(cls, context):
+        return bool(active_strip(context))
+
+    def execute(self, context):
+        strip = active_strip(context)
+
+        context.window_manager.clipboard = strip.atc_object_id
+        self.report({'INFO'}, 'Shot ID %s copied to clipboard' % strip.atc_object_id)
+
+        return {'FINISHED'}
+
+
 def draw_strip_movie_meta(self, context):
     strip = active_strip(context)
     if not strip:
@@ -893,6 +912,7 @@ def register():
     bpy.utils.register_class(ATTRACT_OT_open_meta_blendfile)
     bpy.utils.register_class(ATTRACT_OT_shot_open_in_browser)
     bpy.utils.register_class(ATTRACT_OT_make_shot_thumbnail)
+    bpy.utils.register_class(ATTRACT_OT_copy_id_to_clipboard)
 
     bpy.app.handlers.scene_update_post.append(scene_update_post_handler)
     draw.callback_enable()
