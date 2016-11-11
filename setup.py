@@ -18,11 +18,13 @@
 # ##### END GPL LICENSE BLOCK #####
 
 import glob
+import os
 import sys
 import shutil
 import subprocess
 import re
 import pathlib
+import zipfile
 
 from distutils import log
 from distutils.core import Command
@@ -169,6 +171,34 @@ class BlenderAddonBdist(bdist):
 
 
 # noinspection PyAttributeOutsideInit
+class BlenderAddonFdist(BlenderAddonBdist):
+    """Ensures that 'python setup.py fdist' creates a plain folder structure."""
+
+    user_options = [
+            ('dest-path=', None, 'addon installation path'),
+    ]
+
+    def initialize_options(self):
+        super().initialize_options()
+        self.dest_path = None # path that will contain the addon
+
+    def run(self):
+        super().run()
+
+        # dist_files is a list of tuples ('bdist', 'any', 'filepath')
+        filepath = self.distribution.dist_files[0][2]
+
+        # if dest_path is not specified use the filename as the dest_path (minus the .zip)
+        assert filepath.endswith('.zip')
+        target_folder = self.dest_path or filepath[:-4]
+
+        print('Unzipping the package on {}.'.format(target_folder))
+
+        with zipfile.ZipFile(filepath, 'r') as zip_ref:
+            zip_ref.extractall(target_folder)
+
+
+# noinspection PyAttributeOutsideInit
 class BlenderAddonInstall(install):
     """Ensures the module is placed at the root of the zip file."""
 
@@ -191,6 +221,7 @@ class AvoidEggInfo(install_egg_info):
 
 setup(
     cmdclass={'bdist': BlenderAddonBdist,
+              'fdist': BlenderAddonFdist,
               'install': BlenderAddonInstall,
               'install_egg_info': AvoidEggInfo,
               'wheels': BuildWheels},
