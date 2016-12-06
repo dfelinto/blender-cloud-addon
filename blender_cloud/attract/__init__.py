@@ -70,8 +70,12 @@ def active_strip(context):
 
 def selected_shots(context):
     """Generator, yields selected strips if they are Attract shots."""
+    selected_sequences = context.selected_sequences
 
-    for strip in context.selected_sequences:
+    if selected_sequences is None:
+        return
+
+    for strip in selected_sequences:
         atc_object_id = getattr(strip, 'atc_object_id')
         if not atc_object_id:
             continue
@@ -81,6 +85,11 @@ def selected_shots(context):
 
 def all_shots(context):
     """Generator, yields all strips if they are Attract shots."""
+    sequence_editor = context.scene.sequence_editor
+
+    if sequence_editor is None:
+        # we should throw an exception, but at least this change prevents an error
+        return []
 
     for strip in context.scene.sequence_editor.sequences_all:
         atc_object_id = getattr(strip, 'atc_object_id')
