@@ -160,7 +160,7 @@ class BlenderCloudProjectGroup(PropertyGroup):
 
     project = EnumProperty(
         items=bcloud_available_projects,
-        name='Cloud project',
+        name='Remote Project',
         description='Which Blender Cloud project to work with')
 
     # List of projects is stored in 'available_projects' ID property,
@@ -201,8 +201,8 @@ class BlenderCloudPreferences(AddonPreferences):
     # can switch projects and the local path switches with it.
     attract_project = PointerProperty(type=BlenderCloudProjectGroup)
     attract_project_local_path = StringProperty(
-        name='Local project path',
-        description='Local path of your Attract project, used to search for blend files; '
+        name='Local Project Path',
+        description='Local path of your cloud project, used to search for blend files; '
                     'usually best to set to an absolute path',
         subtype='DIR_PATH',
         default='//../')
@@ -327,7 +327,7 @@ class BlenderCloudPreferences(AddonPreferences):
 
     def draw_attract_buttons(self, attract_box, bcp: BlenderCloudProjectGroup):
         attract_row = attract_box.row(align=True)
-        attract_row.label('Attract', icon_value=icon('CLOUD'))
+        attract_row.label('Blender Cloud Project', icon_value=icon('CLOUD'))
 
         attract_row.enabled = bcp.status in {'NONE', 'IDLE'}
         row_buttons = attract_row.row(align=True)
