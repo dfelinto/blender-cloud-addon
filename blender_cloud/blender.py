@@ -26,13 +26,13 @@ import os.path
 
 import bpy
 from bpy.types import AddonPreferences, Operator, WindowManager, Scene, PropertyGroup
-from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty
+from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty, IntProperty
 import rna_prop_ui
 
-from . import pillar, async_loop
+from . import pillar, flamenco, async_loop
 
-PILLAR_WEB_SERVER_URL = 'https://cloud.blender.org/'
-# PILLAR_WEB_SERVER_URL = 'http://pillar-web:5001/'
+#PILLAR_WEB_SERVER_URL = 'https://cloud.blender.org/'
+PILLAR_WEB_SERVER_URL = 'http://pillar-web:5000/'
 PILLAR_SERVER_URL = '%sapi/' % PILLAR_WEB_SERVER_URL
 
 ADDON_NAME = 'blender_cloud'
@@ -148,6 +148,228 @@ def bcloud_available_projects(self, context):
     return [(p['_id'], p['name'], '') for p in projs]
 
 
+@pyside_cache('manager')
+def bcloud_available_managers(self, context):
+    """Returns the list of items used by BlenderCloudProjectGroup.manager EnumProperty."""
+
+    attr_proj = preferences().attract_project
+    managers = attr_proj.available_managers
+    if not managers:
+        return [('invalid', 'No Manager Available', 'No manager available for the current project in your Blender Cloud')]
+    return [(m['_id'], m['name'], m['description']) for m in managers]
+
+
+def bcloud_available_managers_get():
+    import functools
+    from pillarsdk import Project
+
+    @functools.lru_cache()
+    def find_project(project_uuid: str) -> Project:
+        """Finds a single project.
+
+        Caches the result in memory to prevent more than one call to Pillar.
+        """
+        project = pillar.sync_call(Project.find_one, {'where': {'_id': project_uuid}})
+        return project
+
+    project_info = preferences().attract_project
+    project = find_project(project_info.project)
+
+    """
+    # TODO
+    data = {}
+    for manager in project['extension_props']['flamenco']['managers']:
+        m = pillarsdk.Resource.Get(manager)
+        data[manager] = m.to_json()
+    return data
+    """
+
+    # TODO: hardcoded data for the time being
+    data = {}
+    data['5838be74dae43ca45c8eee25'] = {
+            'name': 'Dalai Manager',
+            'description': 'Il miglior manager del mondo',
+            'picture': '',
+            'host': '',
+            'job_types': {
+                'sleep': {
+                    'description': 'Rest well my friend',
+                    'vars': [],
+                    'settings_schema': {
+                        "time": {
+                            "type": "integer",
+                            "default": 3,
+                            "min": 0,
+                            "max": 5,
+                            },
+                        },
+                    },
+                'simple_render': {
+                    'description': 'Render images',
+                    'vars': [],
+                    'settings_schema': {
+                        "frame_start": {
+                            "type": "integer",
+                            "default": 30,
+                            "min": 1,
+                            },
+                        "samples": {
+                            "type": "integer",
+                            "default": 100,
+                            "description": "Final quality of the shot",
+                            },
+                        "stamp": {
+                            "type": "string",
+                            "default": "Render Stamp",
+                            "description": "Stamp info for the file",
+                            },
+                        },
+                    },
+                },
+            }
+
+    data['12344567890'] = {
+            'name': 'Francesco Manager',
+            'description': 'O melhor gerente do mundo',
+            'picture': '',
+            'host': '',
+            'job_types': {
+                'rest': {
+                    'description': 'Put your computer to sleep',
+                    'vars': [],
+                    'settings_schema': {
+                        "time": {
+                            "type": "integer",
+                            "default": 7,
+                            "min": 0,
+                            "max": 1,
+                            },
+                        "delay": {
+                            "type": "integer",
+                            "default": -2,
+                            "min": 0,
+                            "max": 50,
+                            "description": "Don't start before this",
+                            },
+                        },
+                    },
+                },
+            }
+
+    return data
+
+
+def bcloud_available_managers_refresh(self, context):
+    project_info = preferences().attract_project
+    managers = bcloud_available_managers_get()
+
+    project_info.available_managers = [
+            {'_id': _id, 'name': data['name'], 'description': data['description']} \
+                    for _id, data in managers.items()]
+
+    global bcloud_managers_data
+    bcloud_managers_data = managers
+
+    bcloud_job_types_refresh(self, context)
+    bcloud_job_type_update(self, context)
+
+
+# Globals
+bcloud_job_types_items = None
+bcloud_job_type_data = []
+bcloud_managers_data = {}
+
+def bcloud_job_types_refresh(self, context):
+    """Reset the job types enum"""
+    global bcloud_job_types_items
+    bcloud_job_types_items = None
+
+
+def job_type_id_generate(manager_id, job_type_name):
+    return "{0}:{1}".format(manager_id, job_type_name)
+
+
+def job_type_id_degenerate(manager_id, job_type_id):
+    return job_type_id[len(manager_id) + 1:]
+
+
+def bcloud_job_type_update(self, context):
+    """Create the UI properties"""
+
+    def generate_property(name, data):
+        return "StringProperty(name='{0}')".format(flamenco.prettify(name))
+
+    global bcloud_job_type_data
+    global bcloud_managers_data
+
+    managers = bcloud_managers_data
+
+    project_info = preferences().attract_project
+    manager_id = project_info.manager
+    manager = bcloud_managers_data.get(manager_id)
+    job_type_name = job_type_id_degenerate(manager_id, project_info.job_type)
+
+    job_types = manager.get('job_types')
+    job_type = job_types.get(job_type_name)
+    settings_schema = job_type.get('settings_schema')
+
+    # clear all current job type properties
+    for name in [key for key in BlenderCloudJobTypeGroup.bl_rna.properties.keys() if key not in {'rna_type', 'name'}]:
+        exec("del BlenderCloudJobTypeGroup.{0}".format(name))
+
+    bcloud_job_type_data = []
+    for name, data in settings_schema.items():
+        bcloud_job_type_data.append(name)
+        dynamic_prop = flamenco.DynamicProperty(name, data).text
+
+        if not dynamic_prop:
+            continue
+
+        exec("BlenderCloudJobTypeGroup.{0} = {1}".format(name, dynamic_prop))
+
+
+def bcloud_job_type_get():
+    """Return the data of the current job type"""
+    global bcloud_job_type_data
+    return bcloud_job_type_data
+
+
+def bcloud_job_types(self, context):
+    """Dynamic generated job types enum"""
+
+    global bcloud_job_types_items
+
+    if bcloud_job_types_items is None:
+        project_info = preferences().attract_project
+        manager_id = project_info.manager
+        manager = bcloud_managers_data.get(manager_id)
+
+        fallback = {'no_job_available': {'description': 'Refresh the manager list'}}
+
+        if manager is None:
+            manager = {'job_types': fallback}
+
+        items = [(job_type_id_generate(manager_id, name), flamenco.prettify(name), data['description']) \
+                for name, data in manager.get('job_types', fallback).items()]
+
+        bcloud_job_types_items = items
+
+    return bcloud_job_types_items
+
+
+def bcloud_job_type_validate(self, context):
+    """Make sure the job type is part of the selected manager"""
+    bcloud_job_types_refresh(self, context)
+
+    project_info = preferences().attract_project
+    project_info.job_type = bcloud_job_types(self, context)[0][0]
+
+
+class BlenderCloudJobTypeGroup(PropertyGroup):
+    """Temporary storage of the settings of the current job type"""
+    pass
+
+
 class BlenderCloudProjectGroup(PropertyGroup):
     status = EnumProperty(
         items=[
@@ -161,7 +383,24 @@ class BlenderCloudProjectGroup(PropertyGroup):
     project = EnumProperty(
         items=bcloud_available_projects,
         name='Remote Project',
-        description='Which Blender Cloud project to work with')
+        description='Which Blender Cloud project to work with',
+        update=bcloud_available_managers_refresh)
+
+    manager = EnumProperty(
+        items=bcloud_available_managers,
+        name='Manager',
+        description='',
+        update=bcloud_job_type_validate)
+
+    job_type = EnumProperty(
+            items=bcloud_job_types,
+            name='Job Type',
+            description='',
+            update=bcloud_job_type_update)
+
+    job_type_props = PointerProperty(
+            type=BlenderCloudJobTypeGroup,
+            options={'HIDDEN'})
 
     # List of projects is stored in 'available_projects' ID property,
     # because I don't know how to store a variable list of strings in a proper RNA property.
@@ -172,6 +411,18 @@ class BlenderCloudProjectGroup(PropertyGroup):
     @available_projects.setter
     def available_projects(self, new_projects):
         self['available_projects'] = new_projects
+
+    # Same for managers, but we could use collections for that, by the way
+    # (I don't want to do a refactor now though)
+    # This is a good place to store per-session globals though
+
+    @property
+    def available_managers(self) -> list:
+        return self.get('available_managers', [])
+
+    @available_managers.setter
+    def available_managers(self, new_managers):
+        self['available_managers'] = new_managers
 
 
 class BlenderCloudPreferences(AddonPreferences):
@@ -523,6 +774,7 @@ def icon(icon_name: str) -> int:
 
 
 def register():
+    bpy.utils.register_class(BlenderCloudJobTypeGroup)
     bpy.utils.register_class(BlenderCloudProjectGroup)
     bpy.utils.register_class(BlenderCloudPreferences)
     bpy.utils.register_class(PillarCredentialsUpdate)
@@ -558,6 +810,7 @@ def unregister():
     unload_custom_icons()
 
     bpy.utils.unregister_class(BlenderCloudProjectGroup)
+    bpy.utils.unregister_class(BlenderCloudJobTypeGroup)
     bpy.utils.unregister_class(PillarCredentialsUpdate)
     bpy.utils.unregister_class(BlenderCloudPreferences)
     bpy.utils.unregister_class(SyncStatusProperties)

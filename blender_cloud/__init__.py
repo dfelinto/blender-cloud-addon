@@ -79,9 +79,10 @@ def register():
         settings_sync = reload_mod('settings_sync')
         image_sharing = reload_mod('image_sharing')
         attract = reload_mod('attract')
+        flamenco = reload_mod('flamenco')
     else:
         from . import (blender, texture_browser, async_loop, settings_sync, blendfile, home_project,
-                       image_sharing, attract)
+                       image_sharing, attract, flamenco)
 
     async_loop.setup_asyncio_executor()
     async_loop.register()
@@ -91,6 +92,7 @@ def register():
     settings_sync.register()
     image_sharing.register()
     attract.register()
+    flamenco.register()
 
 
 def _monkey_patch_requests():
@@ -111,9 +113,10 @@ def _monkey_patch_requests():
 
 
 def unregister():
-    from . import blender, texture_browser, async_loop, settings_sync, image_sharing, attract
+    from . import blender, texture_browser, async_loop, settings_sync, image_sharing, attract, flamenco
 
     image_sharing.unregister()
+    flamenco.unregister()
     attract.unregister()
     settings_sync.unregister()
     blender.unregister()
