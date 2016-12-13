@@ -314,8 +314,11 @@ def bcloud_job_type_update(self, context):
     settings_schema = job_type.get('settings_schema')
 
     # clear all current job type properties
-    for name in [key for key in BlenderCloudJobTypeGroup.bl_rna.properties.keys() if key not in {'rna_type', 'name'}]:
-        exec("del BlenderCloudJobTypeGroup.{0}".format(name))
+    skip_keys = {'rna_type', 'name'}
+    dynamic_propnames = (propname for propname in BlenderCloudJobTypeGroup.bl_rna.properties.keys()
+                         if propname not in skip_keys)
+    for name in dynamic_propnames:
+        delattr(BlenderCloudJobTypeGroup, name)
 
     bcloud_job_type_data = []
     for name, data in settings_schema.items():
@@ -325,7 +328,7 @@ def bcloud_job_type_update(self, context):
         if not dynamic_prop:
             continue
 
-        exec("BlenderCloudJobTypeGroup.{0} = {1}".format(name, dynamic_prop))
+        setattr(BlenderCloudJobTypeGroup, name, dynamic_prop)
 
 
 def bcloud_job_type_get():
@@ -367,7 +370,25 @@ def bcloud_job_type_validate(self, context):
 
 class BlenderCloudJobTypeGroup(PropertyGroup):
     """Temporary storage of the settings of the current job type"""
-    pass
+
+    _dynamic_prop_names = []
+
+    @classmethod
+    def depopulate(cls):
+        for name in cls._dynamic_prop_names:
+            delattr(cls, name)
+
+    @classmethod
+    def populate(cls, job_type_props):
+        for name, data in job_type_props.items():
+            dynamic_prop = flamenco.DynamicProperty(name, data)
+
+            setattr(cls, name, dynamic_prop.instantiate())
+            cls._dynamic_prop_names.append(name)
+
+    @classmethod
+    def iter_dynamic_prop_names(cls):
+        return iter(cls._dynamic_prop_names)
 
 
 class BlenderCloudProjectGroup(PropertyGroup):

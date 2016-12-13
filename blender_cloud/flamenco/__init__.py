@@ -50,51 +50,21 @@ def prettify(text):
     return text.title().replace("_", " ")
 
 
-class DynamicProperty():
+class DynamicProperty:
     lookup_type = {
-            'string': "StringProperty",
-            'integer': "IntProperty",
-            'bool': "BoolProperty"}
+            'string': bpy.props.StringProperty,
+            'integer': bpy.props.IntProperty,
+            'bool': bpy.props.BoolProperty}
 
     def __init__(self, name, data):
+        assert data.get('type') in self.lookup_type
+
         self._name = name
         self._data = data
-        self._text = ""
 
-        if self._validate(data):
-            self._process()
-
-    @classmethod
-    def _validate(cls, data):
-        return data.get('type') in cls.lookup_type
-
-    def _class_name(self):
-        return self.lookup_type.get(self._data.get('type'))
-
-    def _process(self):
-        self._text = "{0}(".format(self._class_name())
-        self._text += "name='{0}'".format(prettify(self._name))
-        self._text += self._get_value('min')
-        self._text += self._get_value('max')
-        self._text += self._get_value('default')
-        self._text += self._get_value('description')
-        self._text += ")"
-
-    def _get_value(self, value_name, name=None):
-        value = self._data.get(value_name, None)
-        name = value_name if name is None else name
-
-        if value is None:
-            return ""
-
-        if type(value) == str:
-            return ',{0}="{1}"'.format(name, value)
-        else:
-            return ",{0}={1}".format(name, value)
-
-    @property
-    def text(self):
-        return self._text
+    def instantiate(self):
+        my_type = self.lookup_type.get(self._data.get('type'))
+        return my_type(name=prettify(self._name), **self._data)
 
 
 class FLAMENCO_OT_job_dispatch(Operator):
