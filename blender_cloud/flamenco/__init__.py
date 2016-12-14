@@ -85,7 +85,7 @@ class FLAMENCO_OT_managers_refresh(Operator):
 
     def execute(self, context):
         from .. import blender
-        blender.bcloud_available_managers_refresh(self, context)
+        blender.bcloud_available_flamenco_managers_refresh(self, context)
         return {'FINISHED'}
 
 

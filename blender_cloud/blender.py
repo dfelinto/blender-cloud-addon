@@ -149,17 +149,17 @@ def bcloud_available_projects(self, context):
 
 
 @pyside_cache('manager')
-def bcloud_available_managers(self, context):
+def bcloud_available_flamenco_managers(self, context):
     """Returns the list of items used by BlenderCloudProjectGroup.manager EnumProperty."""
 
     attr_proj = preferences().attract_project
-    managers = attr_proj.available_managers
+    managers = attr_proj.available_flamenco_managers
     if not managers:
         return [('invalid', 'No Manager Available', 'No manager available for the current project in your Blender Cloud')]
     return [(m['_id'], m['name'], m['description']) for m in managers]
 
 
-def bcloud_available_managers_get():
+def bcloud_available_flamenco_managers_get():
     import functools
     from pillarsdk import Project
 
@@ -259,11 +259,11 @@ def bcloud_available_managers_get():
     return data
 
 
-def bcloud_available_managers_refresh(self, context):
+def bcloud_available_flamenco_managers_refresh(self, context):
     project_info = preferences().attract_project
-    managers = bcloud_available_managers_get()
+    managers = bcloud_available_flamenco_managers_get()
 
-    project_info.available_managers = [
+    project_info.available_flamenco_managers = [
             {'_id': _id, 'name': data['name'], 'description': data['description']} \
                     for _id, data in managers.items()]
 
@@ -384,10 +384,10 @@ class BlenderCloudProjectGroup(PropertyGroup):
         items=bcloud_available_projects,
         name='Remote Project',
         description='Which Blender Cloud project to work with',
-        update=bcloud_available_managers_refresh)
+        update=bcloud_available_flamenco_managers_refresh)
 
     manager = EnumProperty(
-        items=bcloud_available_managers,
+        items=bcloud_available_flamenco_managers,
         name='Manager',
         description='',
         update=bcloud_job_type_validate)
@@ -417,12 +417,12 @@ class BlenderCloudProjectGroup(PropertyGroup):
     # This is a good place to store per-session globals though
 
     @property
-    def available_managers(self) -> list:
-        return self.get('available_managers', [])
+    def available_flamenco_managers(self) -> list:
+        return self.get('available_flamenco_managers', [])
 
-    @available_managers.setter
-    def available_managers(self, new_managers):
-        self['available_managers'] = new_managers
+    @available_flamenco_managers.setter
+    def available_flamenco_managers(self, new_managers):
+        self['available_flamenco_managers'] = new_managers
 
 
 class BlenderCloudPreferences(AddonPreferences):
