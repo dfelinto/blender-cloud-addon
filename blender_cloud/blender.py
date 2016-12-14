@@ -31,8 +31,8 @@ import rna_prop_ui
 
 from . import pillar, flamenco, async_loop
 
-#PILLAR_WEB_SERVER_URL = 'https://cloud.blender.org/'
-PILLAR_WEB_SERVER_URL = 'http://pillar-web:5000/'
+PILLAR_WEB_SERVER_URL = 'https://cloud.blender.org/'
+# PILLAR_WEB_SERVER_URL = 'http://pillar-web:5001/'
 PILLAR_SERVER_URL = '%sapi/' % PILLAR_WEB_SERVER_URL
 
 ADDON_NAME = 'blender_cloud'
