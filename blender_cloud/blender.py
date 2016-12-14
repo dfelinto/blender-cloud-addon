@@ -276,7 +276,6 @@ def bcloud_available_managers_refresh(self, context):
 
 # Globals
 bcloud_job_types_items = None
-bcloud_job_type_data = []
 bcloud_managers_data = {}
 
 def bcloud_job_types_refresh(self, context):
@@ -299,7 +298,6 @@ def bcloud_job_type_update(self, context):
     def generate_property(name, data):
         return "StringProperty(name='{0}')".format(flamenco.prettify(name))
 
-    global bcloud_job_type_data
     global bcloud_managers_data
 
     managers = bcloud_managers_data
@@ -313,28 +311,8 @@ def bcloud_job_type_update(self, context):
     job_type = job_types.get(job_type_name)
     settings_schema = job_type.get('settings_schema')
 
-    # clear all current job type properties
-    skip_keys = {'rna_type', 'name'}
-    dynamic_propnames = (propname for propname in BlenderCloudJobTypeGroup.bl_rna.properties.keys()
-                         if propname not in skip_keys)
-    for name in dynamic_propnames:
-        delattr(BlenderCloudJobTypeGroup, name)
-
-    bcloud_job_type_data = []
-    for name, data in settings_schema.items():
-        bcloud_job_type_data.append(name)
-        dynamic_prop = flamenco.DynamicProperty(name, data).text
-
-        if not dynamic_prop:
-            continue
-
-        setattr(BlenderCloudJobTypeGroup, name, dynamic_prop)
-
-
-def bcloud_job_type_get():
-    """Return the data of the current job type"""
-    global bcloud_job_type_data
-    return bcloud_job_type_data
+    BlenderCloudJobTypeGroup.depopulate()
+    BlenderCloudJobTypeGroup.populate(settings_schema)
 
 
 def bcloud_job_types(self, context):
@@ -377,6 +355,7 @@ class BlenderCloudJobTypeGroup(PropertyGroup):
     def depopulate(cls):
         for name in cls._dynamic_prop_names:
             delattr(cls, name)
+        cls._dynamic_prop_names = []
 
     @classmethod
     def populate(cls, job_type_props):

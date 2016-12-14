@@ -57,14 +57,18 @@ class DynamicProperty:
             'bool': bpy.props.BoolProperty}
 
     def __init__(self, name, data):
-        assert data.get('type') in self.lookup_type
-
         self._name = name
-        self._data = data
+        self._data = self._convert_dict(data)
+        self._type = self.lookup_type.get(data.get('type'))
+        assert self._type
+
+    @staticmethod
+    def _convert_dict(data):
+        keys = {'min', 'max', 'description', 'default'}
+        return {key: value for key, value in data.items() if key in keys}
 
     def instantiate(self):
-        my_type = self.lookup_type.get(self._data.get('type'))
-        return my_type(name=prettify(self._name), **self._data)
+        return self._type(name=prettify(self._name), **self._data)
 
 
 class FLAMENCO_OT_job_dispatch(Operator):
@@ -108,11 +112,10 @@ class FLAMENCO_PT_main(Panel):
         col.separator()
 
         box = col.box()
-        job_type = blender.bcloud_job_type_get()
-        job_type_data = project_info.job_type_props
+        job_type_props = project_info.job_type_props
 
-        for var in job_type:
-            box.prop(job_type_data, var)
+        for name in job_type_props.iter_dynamic_prop_names():
+            box.prop(job_type_props, name)
 
         col.separator()
         col.operator("flamenco.job_dispatch")
